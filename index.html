@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERLC Live Dashboard</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #14161a; --muted: #5d6573;
+    --line: #e1e4ea; --accent: #2563eb; --good: #16a34a; --warn: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --card: #171b22; --text: #e8eaee; --muted: #98a1b0;
+      --line: #262c36; --accent: #5b8def; --good: #34d17a; --warn: #f0a23b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  .live { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  .dot.off { background: var(--warn); }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .stat .label { color: var(--muted); font-size: 13px; }
+  .stat .value { font-size: 30px; font-weight: 650; margin-top: 2px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .two { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 16px; }
+  .bar-row { margin-bottom: 10px; }
+  .bar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .chip { display: inline-block; padding: 2px 8px; margin: 0 6px 6px 0; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
+  input[type=text], input[type=password] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+         background: var(--bg); color: var(--text); font: inherit; }
+  .table-wrap { overflow-x: auto; max-height: 340px; overflow-y: auto; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--card); }
+  .muted { color: var(--muted); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+  button.active, button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; }
+  .row { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">ERLC Live Dashboard</h1>
+    <div class="live"><span class="dot" id="dot"></span><span id="updated">Connecting…</span></div>
+  </header>
+
+  <div class="grid">
+    <div class="card stat"><div class="label">Players online</div><div class="value" id="players">–</div></div>
+    <div class="card stat"><div class="label">In queue</div><div class="value" id="queue">–</div></div>
+    <div class="card stat"><div class="label">Staff in-game</div><div class="value" id="staffCount">–</div></div>
+    <div class="card stat" id="verifiedCard" hidden><div class="label">Verified members</div><div class="value" id="verified">–</div></div>
+  </div>
+
+  <div class="two">
+    <div class="card"><h2>Players by team</h2><div id="teams" class="muted">Loading…</div></div>
+    <div class="card"><h2>Staff on duty</h2><div id="staff" class="muted">Loading…</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h2>Online players</h2>
+    <input type="text" id="search" placeholder="Search players…" aria-label="Search players">
+    <div class="table-wrap">
+      <table><thead><tr><th>Player</th><th>Team</th><th>Role</th></tr></thead><tbody id="playerRows"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Staff panel</h2>
+    <div id="staffLogin">
+      <div class="row">
+        <input type="password" id="staffKey" placeholder="Staff key" aria-label="Staff key">
+        <button class="primary" id="staffGo">Unlock</button>
+      </div>
+      <div class="muted" id="staffMsg" style="margin-top:8px"></div>
+    </div>
+    <div id="staffArea" hidden>
+      <div class="tabs">
+        <button data-feed="modcalls" class="active">Mod calls</button>
+        <button data-feed="joinlogs">Join logs</button>
+        <button data-feed="killlogs">Kill logs</button>
+      </div>
+      <pre id="feedOut" class="muted">Loading…</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let allPlayers = [];
+let staffKey = '';
+let feed = 'modcalls';
+
+try { staffKey = sessionStorage.getItem('staffKey') || ''; } catch {}
+
+function render(d) {
+  $('title').textContent = d.name || 'ERLC Live Dashboard';
+  $('players').textContent = d.max ? `${d.current} / ${d.max}` : d.current;
+  $('queue').textContent = d.queue;
+  $('staffCount').textContent = d.staff.length;
+  if (d.verified !== null) { $('verifiedCard').hidden = false; $('verified').textContent = d.verified; }
+
+  const teamsEl = $('teams'); teamsEl.textContent = '';
+  const entries = Object.entries(d.teams).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) teamsEl.textContent = 'Nobody is online right now.';
+  const total = Math.max(d.current, 1);
+  for (const [team, n] of entries) {
+    const row = document.createElement('div'); row.className = 'bar-row';
+    const top = document.createElement('div'); top.className = 'bar-top';
+    const a = document.createElement('span'); a.textContent = team;
+    const b = document.createElement('span'); b.textContent = n;
+    top.append(a, b);
+    const bar = document.createElement('div'); bar.className = 'bar';
+    const fill = document.createElement('span'); fill.style.width = `${Math.round(n / total * 100)}%`;
+    bar.append(fill); row.append(top, bar); teamsEl.append(row);
+  }
+
+  const staffEl = $('staff'); staffEl.textContent = '';
+  if (!d.staff.length) staffEl.textContent = 'No staff in-game.';
+  for (const s of d.staff) {
+    const c = document.createElement('span'); c.className = 'chip';
+    c.textContent = `${s.name} · ${s.permission}`;
+    staffEl.append(c);
+  }
+
+  allPlayers = d.players;
+  renderPlayers();
+  $('dot').className = 'dot';
+  $('updated').textContent = 'Updated ' + new Date(d.updatedAt).toLocaleTimeString();
+}
+
+function renderPlayers() {
+  const q = $('search').value.trim().toLowerCase();
+  const body = $('playerRows'); body.textContent = '';
+  for (const p of allPlayers.filter(p => p.name.toLowerCase().includes(q))) {
+    const tr = document.createElement('tr');
+    for (const val of [p.name, p.team, p.permission || 'Normal']) {
+      const td = document.createElement('td'); td.textContent = val; tr.append(td);
+    }
+    body.append(tr);
+  }
+}
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    if (!r.ok) throw new Error();
+    render(await r.json());
+  } catch {
+    $('dot').className = 'dot off';
+    $('updated').textContent = 'Can’t reach the server. Retrying…';
+  }
+}
+
+async function loadFeed() {
+  if (!staffKey) return;
+  const r = await fetch('/api/staff/' + feed, { headers: { 'x-staff-key': staffKey } });
+  if (r.status === 401) {
+    staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {}
+    $('staffArea').hidden = true; $('staffLogin').hidden = false;
+    $('staffMsg').textContent = 'Wrong staff key.';
+    return;
+  }
+  if (r.status === 404) { $('staffMsg').textContent = 'The staff panel is disabled on this server.'; return; }
+  $('staffLogin').hidden = true; $('staffArea').hidden = false;
+  $('feedOut').textContent = r.ok ? JSON.stringify(await r.json(), null, 2) : 'Could not load this feed right now.';
+}
+
+$('search').addEventListener('input', renderPlayers);
+$('staffGo').addEventListener('click', () => {
+  staffKey = $('staffKey').value;
+  try { sessionStorage.setItem('staffKey', staffKey); } catch {}
+  $('staffMsg').textContent = '';
+  loadFeed();
+});
+document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-feed]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active'); feed = btn.dataset.feed; $('feedOut').textContent = 'Loading…'; loadFeed();
+}));
+
+loadStats(); loadFeed();
+setInterval(loadStats, 10000);
+setInterval(loadFeed, 15000);
+</script>
+</body>
+</html>
