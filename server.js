@@ -2,15 +2,20 @@ require('dotenv').config();
 const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
-const Database = require('better-sqlite3');
 
 const { ERLC_SERVER_KEY, STAFF_KEY, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
-const BASE = 'https://api.policeroleplay.community/v1'; // confirm against the official ERLC docs
+const BASE = 'https://api.erlc.gg/v2'; // confirm against the official ERLC docs
 
 // Read-only access to the verification bot's database (optional)
+// better-sqlite3 is an optional dependency: if it isn't installed (or the DB is missing),
+// the dashboard still works and simply hides the verified count.
 let db = null;
-try { db = new Database(path.resolve(DB_PATH), { readonly: true, fileMustExist: true }); }
-catch { console.warn('Verification DB not found; verified count will be hidden.'); }
+try {
+  const Database = require('better-sqlite3');
+  db = new Database(path.resolve(DB_PATH), { readonly: true, fileMustExist: true });
+} catch {
+  console.warn('Verification DB unavailable; verified count will be hidden.');
+}
 
 // ---------- ERLC client with cache + request sharing ----------
 // The key stays on the server. Caching keeps you under ERLC rate limits
