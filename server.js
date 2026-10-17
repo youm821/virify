@@ -47,7 +47,18 @@ app.set('trust proxy', 1); // Render sits behind a proxy
 
 // Render pings this to know the service is up
 app.get('/healthz', (req, res) => res.send('ok'));
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
+const fs = require('fs');
+const PAGE_DIRS = [path.join(__dirname, 'public'), __dirname];
+const pageDir = PAGE_DIRS.find(d => fs.existsSync(path.join(d, 'index.html')));
+if (pageDir) {
+  app.use(express.static(pageDir, { index: 'index.html', dotfiles: 'ignore' }));
+} else {
+  console.error('index.html not found. Expected dashboard/public/index.html in your repo.');
+  app.get('/', (req, res) => res.status(500).send(
+    'Server is running, but index.html is missing. Upload dashboard/public/index.html to your GitHub repo and redeploy.'
+  ));
+}
 
 app.get('/api/stats', async (req, res) => {
   try {
