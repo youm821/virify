@@ -60,6 +60,7 @@
     <div class="card stat"><div class="label">Players online</div><div class="value" id="players">–</div></div>
     <div class="card stat"><div class="label">In queue</div><div class="value" id="queue">–</div></div>
     <div class="card stat"><div class="label">Staff in-game</div><div class="value" id="staffCount">–</div></div>
+    <div class="card stat" id="melonlyCard" hidden><div class="label" id="melonlyLabel">Melonly members</div><div class="value" id="melonlyCount">–</div></div>
     <div class="card stat" id="verifiedCard" hidden><div class="label">Verified members</div><div class="value" id="verified">–</div></div>
   </div>
 
@@ -90,6 +91,8 @@
         <button data-feed="modcalls" class="active">Mod calls</button>
         <button data-feed="joinlogs">Join logs</button>
         <button data-feed="killlogs">Kill logs</button>
+        <button data-feed="commandlogs">Command logs</button>
+        <button data-feed="melonlymembers">Melonly members</button>
       </div>
       <pre id="feedOut" class="muted">Loading…</pre>
     </div>
@@ -189,7 +192,19 @@ document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('cl
   btn.classList.add('active'); feed = btn.dataset.feed; $('feedOut').textContent = 'Loading…'; loadFeed();
 }));
 
-loadStats(); loadFeed();
+async function loadMelonly() {
+  try {
+    const r = await fetch('/api/melonly');
+    const d = await r.json();
+    if (!d.enabled || d.error) return;
+    $('melonlyCard').hidden = false;
+    $('melonlyLabel').textContent = (d.name ? d.name + ' · ' : '') + 'Melonly members';
+    $('melonlyCount').textContent = d.members;
+  } catch {}
+}
+
+loadStats(); loadFeed(); loadMelonly();
+setInterval(loadMelonly, 60000);
 setInterval(loadStats, 10000);
 setInterval(loadFeed, 15000);
 </script>
