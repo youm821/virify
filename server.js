@@ -4,7 +4,17 @@ const path = require('path');
 const express = require('express');
 const fs = require('fs');
 
-const { ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
+const {
+  ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, ALLOW_ANNOUNCE,
+  DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_GUILD_ID, DISCORD_BOT_TOKEN, VERIFIED_ROLE_ID,
+  STAFF_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
+} = process.env;
+const STAFF_ROLES = STAFF_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
+// Render sets RENDER_EXTERNAL_URL automatically; set BASE_URL yourself for a custom domain.
+const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const authEnabled = Boolean(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET);
+const verifyEnabled = Boolean(authEnabled && DISCORD_BOT_TOKEN && VERIFIED_ROLE_ID && DISCORD_GUILD_ID);
+const announceEnabled = String(ALLOW_ANNOUNCE).toLowerCase() === 'true';
 const BASE = 'https://api.erlc.gg/v2'; // ER:LC API v2: https://apidocs.erlc.gg
 
 // Read-only access to the verification bot's database (optional)
@@ -72,6 +82,7 @@ async function melonly(endpoint, ttl = 30_000) {
 // ---------- App ----------
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
+app.use(express.json({ limit: '10kb' }));
 
 // Render pings this to know the service is up
 app.get('/healthz', (req, res) => res.json({
@@ -80,6 +91,10 @@ app.get('/healthz', (req, res) => res.json({
   erlcKeySet: Boolean(ERLC_SERVER_KEY),
   staffKeySet: Boolean(STAFF_KEY),
   melonlyTokenSet: Boolean(MELONLY_API_TOKEN),
+  discordLoginSet: authEnabled,
+  staffRolesSet: STAFF_ROLES.length > 0,
+  webVerifyEnabled: verifyEnabled,
+  baseUrl: BASE_URL,
 }));
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
 const PAGE_DIRS = [path.join(__dirname, 'public'), __dirname];
@@ -134,6 +149,7 @@ app.get('/api/stats', async (req, res) => {
 
     let verified = null;
     if (db) { try { verified = db.prepare('SELECT COUNT(*) AS n FROM links').get().n; } catch {} }
+    if (verified === null && verifyEnabled) verified = Object.keys(links).length;
 
     res.set('Cache-Control', 'no-store');
     res.json({
@@ -183,16 +199,263 @@ app.get('/api/melonly', async (req, res) => {
   }
 });
 
-// ---------- Staff-only panels ----------
-function requireStaff(req, res, next) {
-  if (!STAFF_KEY) return res.status(404).json({ error: 'Staff panel disabled.' });
-  const given = Buffer.from(String(req.get('x-staff-key') || ''));
-  const real = Buffer.from(STAFF_KEY);
-  if (given.length !== real.length || !crypto.timingSafeEqual(given, real)) {
-    return res.status(401).json({ error: 'Wrong staff key.' });
+// ---------- Sessions (signed cookies, no extra packages) ----------
+// Set SESSION_SECRET in Render so logins survive restarts; otherwise a random one is used per boot.
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const sign = v => crypto.createHmac('sha256', SESSION_SECRET).update(v).digest('base64url');
+function packCookie(obj) { const b = Buffer.from(JSON.stringify(obj)).toString('base64url'); return `${b}.${sign(b)}`; }
+function unpackCookie(raw) {
+  if (!raw || !raw.includes('.')) return null;
+  const [b, sig] = raw.split('.');
+  const want = sign(b);
+  if (sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+  try {
+    const o = JSON.parse(Buffer.from(b, 'base64url').toString());
+    return o.exp && o.exp < Date.now() ? null : o;
+  } catch { return null; }
+}
+function readCookies(req) {
+  const out = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
   }
+  return out;
+}
+function setCookie(res, name, value, maxAgeSec) {
+  const secure = BASE_URL.startsWith('https') ? '; Secure' : '';
+  res.append('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure}`);
+}
+const getSession = req => unpackCookie(readCookies(req).session);
+
+// ---------- Discord login (OAuth2) ----------
+const REDIRECT_URI = `${BASE_URL}/auth/callback`;
+const DISCORD_API = 'https://discord.com/api/v10';
+
+app.get('/auth/login', (req, res) => {
+  if (!authEnabled) return res.status(404).send('Discord login is not configured on this server.');
+  const state = crypto.randomBytes(16).toString('hex');
+  setCookie(res, 'oauth_state', packCookie({ state, exp: Date.now() + 10 * 60_000 }), 600);
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
+    scope: DISCORD_GUILD_ID ? 'identify guilds.members.read' : 'identify', state, prompt: 'none',
+  });
+  res.redirect(`https://discord.com/oauth2/authorize?${params}`);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const st = unpackCookie(readCookies(req).oauth_state);
+    if (!st || !req.query.code || st.state !== req.query.state) {
+      return res.status(400).send('Login failed (the sign-in link expired). Go back and try again.');
+    }
+    const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID, client_secret: DISCORD_CLIENT_SECRET, grant_type: 'authorization_code',
+        code: String(req.query.code), redirect_uri: REDIRECT_URI,
+      }),
+    });
+    if (!tokenRes.ok) throw new Error(`token exchange ${tokenRes.status} (check the redirect URL in the Discord developer portal)`);
+    const { access_token } = await tokenRes.json();
+    const auth = { Authorization: `Bearer ${access_token}` };
+
+    const me = await (await fetch(`${DISCORD_API}/users/@me`, { headers: auth })).json();
+    let inGuild = true, roles = [];
+    if (DISCORD_GUILD_ID) {
+      const m = await fetch(`${DISCORD_API}/users/@me/guilds/${DISCORD_GUILD_ID}/member`, { headers: auth });
+      if (m.ok) roles = (await m.json()).roles || []; else inGuild = false;
+    }
+    const staff = inGuild && roles.some(r => STAFF_ROLES.includes(r));
+    const session = {
+      id: me.id, name: me.global_name || me.username, staff, inGuild,
+      avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=64` : null,
+      exp: Date.now() + 12 * 3600_000,
+    };
+    setCookie(res, 'session', packCookie(session), 12 * 3600);
+    setCookie(res, 'oauth_state', '', 0);
+    res.redirect('/');
+  } catch (err) {
+    console.error('Discord login failed:', err.message);
+    res.status(502).send('Discord login failed. Check the server logs and your Discord app settings.');
+  }
+});
+
+app.get('/auth/logout', (req, res) => { setCookie(res, 'session', '', 0); res.redirect('/'); });
+
+// ---------- Web verification (Roblox <-> Discord) ----------
+// Links are saved to data/links.json. On Render's free plan the disk resets on redeploy,
+// but the Discord role itself is permanent, so members stay verified.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const LINKS_FILE = path.join(DATA_DIR, 'links.json');
+let links = {};
+try { links = JSON.parse(fs.readFileSync(LINKS_FILE, 'utf8')); } catch {}
+function saveLinks() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(LINKS_FILE + '.tmp', JSON.stringify(links));
+    fs.renameSync(LINKS_FILE + '.tmp', LINKS_FILE);
+  } catch (e) { console.error('Could not save links:', e.message); }
+}
+const pending = new Map(); // discordId -> { robloxId, robloxUsername, code, exp, startedAt }
+
+const botCall = (method, url, body) => fetch(`${DISCORD_API}${url}`, {
+  method,
+  headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+  body: body ? JSON.stringify(body) : undefined,
+});
+
+function requireLogin(req, res, next) {
+  const s = getSession(req);
+  if (!s) return res.status(401).json({ error: 'Log in with Discord first.' });
+  req.session = s;
   next();
 }
+
+app.get('/api/me', (req, res) => {
+  const s = getSession(req);
+  const link = s ? links[s.id] : null;
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    authEnabled, verifyEnabled, staffKeyEnabled: Boolean(STAFF_KEY), announceEnabled,
+    user: s ? { id: s.id, name: s.name, avatar: s.avatar } : null,
+    inGuild: s ? s.inGuild : null,
+    staff: Boolean(s && s.staff),
+    link: link ? { robloxUsername: link.robloxUsername, robloxId: link.robloxId } : null,
+  });
+});
+
+app.post('/api/verify/start', requireLogin, async (req, res) => {
+  if (!verifyEnabled) return res.status(404).json({ error: 'Web verification is not enabled.' });
+  const uid = req.session.id;
+  if (!req.session.inGuild) return res.status(403).json({ error: 'Join the Discord server first, then log in again.' });
+  if (links[uid]) return res.status(409).json({ error: 'You are already verified.' });
+  const prev = pending.get(uid);
+  if (prev && Date.now() - prev.startedAt < 3000) return res.status(429).json({ error: 'Slow down for a moment.' });
+
+  const username = String(req.body.username || '').trim();
+  if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return res.status(400).json({ error: 'That doesn’t look like a Roblox username.' });
+  try {
+    const r = await fetch('https://users.roblox.com/v1/usernames/users', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: [username], excludeBannedUsers: true }),
+    });
+    if (!r.ok) throw new Error(`Roblox ${r.status}`);
+    const found = (await r.json()).data?.[0];
+    if (!found) return res.status(404).json({ error: 'I couldn’t find that Roblox user.' });
+    if (Object.values(links).some(l => l.robloxId === String(found.id))) {
+      return res.status(409).json({ error: 'That Roblox account is already linked to another Discord user.' });
+    }
+    const code = 'ERLC-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+    pending.set(uid, { robloxId: String(found.id), robloxUsername: found.name, code, exp: Date.now() + 10 * 60_000, startedAt: Date.now() });
+    res.json({ code, robloxUsername: found.name, minutes: 10 });
+  } catch (err) {
+    console.error(err.message);
+    res.status(502).json({ error: 'Could not reach Roblox. Try again in a moment.' });
+  }
+});
+
+app.post('/api/verify/confirm', requireLogin, async (req, res) => {
+  if (!verifyEnabled) return res.status(404).json({ error: 'Web verification is not enabled.' });
+  const uid = req.session.id;
+  const p = pending.get(uid);
+  if (!p) return res.status(400).json({ error: 'Start verification first.' });
+  if (Date.now() > p.exp) { pending.delete(uid); return res.status(400).json({ error: 'Your code expired. Start again.' }); }
+  try {
+    const r = await fetch(`https://users.roblox.com/v1/users/${p.robloxId}`);
+    if (!r.ok) throw new Error(`Roblox ${r.status}`);
+    const user = await r.json();
+    if (!String(user.description || '').includes(p.code)) {
+      return res.status(400).json({ error: `I couldn’t find ${p.code} in your Roblox About section yet. Save it, wait a few seconds, then try again.` });
+    }
+    links[uid] = { robloxId: p.robloxId, robloxUsername: user.name, verifiedAt: Date.now() };
+    saveLinks(); pending.delete(uid);
+
+    const notes = [];
+    const role = await botCall('PUT', `/guilds/${DISCORD_GUILD_ID}/members/${uid}/roles/${VERIFIED_ROLE_ID}`);
+    if (!role.ok) notes.push('I linked your account but couldn’t give you the role. Ask a staff member (the bot’s role must be above the verified role).');
+    await botCall('PATCH', `/guilds/${DISCORD_GUILD_ID}/members/${uid}`, { nick: user.name.slice(0, 32) }).catch(() => {});
+    res.json({ ok: true, robloxUsername: user.name, notes });
+  } catch (err) {
+    console.error(err.message);
+    res.status(502).json({ error: 'Could not reach Roblox. Try again in a moment.' });
+  }
+});
+
+app.post('/api/verify/remove', requireLogin, async (req, res) => {
+  const uid = req.session.id;
+  if (!links[uid]) return res.status(404).json({ error: 'You are not verified here.' });
+  delete links[uid]; saveLinks();
+  if (verifyEnabled) await botCall('DELETE', `/guilds/${DISCORD_GUILD_ID}/members/${uid}/roles/${VERIFIED_ROLE_ID}`).catch(() => {});
+  res.json({ ok: true });
+});
+
+// ---------- Staff-only panels ----------
+// Staff = Discord login with one of STAFF_ROLE_IDS, or the shared STAFF_KEY header (fallback).
+function requireStaff(req, res, next) {
+  if (!STAFF_KEY && !authEnabled) return res.status(404).json({ error: 'Staff panel disabled.' });
+  const s = getSession(req);
+  if (s && s.staff) { req.staffUser = s.name; return next(); }
+  if (STAFF_KEY) {
+    const given = Buffer.from(String(req.get('x-staff-key') || ''));
+    const real = Buffer.from(STAFF_KEY);
+    if (given.length === real.length && crypto.timingSafeEqual(given, real)) { req.staffUser = 'staff-key'; return next(); }
+  }
+  return res.status(401).json({ error: 'Staff access required.' });
+}
+
+const nameOf = s => String(s || '').split(':')[0];
+const topN = (map, n = 5) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name, count]) => ({ name, count }));
+const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+
+app.get('/api/staff/insights', requireStaff, async (req, res) => {
+  try {
+    const d = await erlc(['KillLogs', 'CommandLogs', 'ModCalls', 'JoinLogs'], 20_000);
+    const killers = new Map(), victims = new Map(), cmdUsers = new Map(), cmds = new Map();
+    for (const k of d.KillLogs || []) { bump(killers, nameOf(k.Killer)); bump(victims, nameOf(k.Killed)); }
+    for (const c of d.CommandLogs || []) { bump(cmdUsers, nameOf(c.Player)); bump(cmds, String(c.Command || '').split(' ')[0]); }
+    const calls = d.ModCalls || [];
+    const answered = calls.filter(c => c.Moderator).length;
+    const hourAgo = Math.floor(Date.now() / 1000) - 3600;
+    const joins = (d.JoinLogs || []).filter(j => j.Join);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      topKillers: topN(killers), topVictims: topN(victims), topCommandUsers: topN(cmdUsers), topCommands: topN(cmds),
+      modCalls: { total: calls.length, answered, unanswered: calls.length - answered },
+      joinsLastHour: joins.filter(j => j.Timestamp > hourAgo).length,
+      uniquePlayersInLog: new Set(joins.map(j => nameOf(j.Player))).size,
+      killCount: (d.KillLogs || []).length,
+    });
+  } catch (err) {
+    res.status(502).json({ error: 'Could not reach the ERLC API.' });
+  }
+});
+
+// Staff can broadcast a server message (:m) or a hint (:h). Off unless ALLOW_ANNOUNCE=true.
+// ER:LC may require your host's IP to be trusted in the API dashboard before commands work.
+let lastCommandAt = 0;
+app.post('/api/staff/announce', requireStaff, async (req, res) => {
+  if (!announceEnabled) return res.status(403).json({ error: 'Sending messages is turned off (set ALLOW_ANNOUNCE=true).' });
+  const prefix = req.body.type === 'hint' ? ':h' : ':m';
+  const message = String(req.body.message || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  if (!message) return res.status(400).json({ error: 'Type a message first.' });
+  if (Date.now() - lastCommandAt < 5000) return res.status(429).json({ error: 'Wait a few seconds between messages.' });
+  lastCommandAt = Date.now();
+  try {
+    const r = await fetch(`${BASE}/server/command`, {
+      method: 'POST',
+      headers: { 'server-key': ERLC_SERVER_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: `${prefix} ${message}` }),
+    });
+    const body = await r.json().catch(() => ({}));
+    console.log(`[announce] ${req.staffUser}: ${prefix} ${message}`);
+    if (!r.ok) return res.status(502).json({ error: body.message || `ERLC returned ${r.status}.` });
+    res.json({ ok: true });
+  } catch {
+    res.status(502).json({ error: 'Could not reach the ERLC API.' });
+  }
+});
 
 const erlcFeed = (flag) => async () =>
   [...((await erlc([flag]))[flag] || [])].sort((a, b) => (b.Timestamp || 0) - (a.Timestamp || 0)).slice(0, 200);
