@@ -64,6 +64,16 @@
   .chart-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; flex-wrap: wrap; gap: 6px; }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
   .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  a.btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-size: 14px; }
+  a.link { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .user { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--line); }
+  .code { font: 600 20px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 8px; display: inline-block; margin: 8px 0; user-select: all; }
+  .msg { margin-top: 8px; font-size: 14px; } .msg.err { color: var(--bad); } .msg.ok { color: var(--good); }
+  .lists { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .lists h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 500; }
+  .lists ol { margin: 0; padding-left: 20px; font-size: 14px; } .lists li span { color: var(--muted); }
+  textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -71,7 +81,10 @@
 <div class="wrap">
   <header>
     <h1 id="title">ERLC Live Dashboard</h1>
-    <div class="live"><span class="dot" id="dot"></span><span id="updated">Connecting…</span></div>
+    <div class="row" style="align-items:center;gap:16px;flex-wrap:wrap">
+      <div class="live"><span class="dot" id="dot"></span><span id="updated">Connecting…</span></div>
+      <div id="userBox"></div>
+    </div>
   </header>
 
   <div class="grid">
@@ -120,25 +133,50 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card section" id="verifyCard" hidden>
+    <h2>Verify your Roblox account <small id="verifyState"></small></h2>
+    <div id="verifyBody"></div>
+  </div>
+
+  <div class="card" id="staffCard">
     <h2>Staff panel</h2>
     <div id="staffLogin">
-      <div class="row">
-        <input type="password" id="staffKey" placeholder="Staff key" aria-label="Staff key">
-        <button class="primary" id="staffGo">Unlock</button>
+      <div id="discordLoginRow" hidden>
+        <a class="btn" href="/auth/login">Log in with Discord</a>
+        <span class="muted" style="margin-left:8px">Members with a staff role get access.</span>
       </div>
-      <div class="muted" id="staffMsg" style="margin-top:8px"></div>
+      <div id="keyRow" hidden style="margin-top:12px">
+        <div class="muted" style="margin-bottom:6px">Or use the shared staff key:</div>
+        <div class="row">
+          <input type="password" id="staffKey" placeholder="Staff key" aria-label="Staff key">
+          <button class="primary" id="staffGo">Unlock</button>
+        </div>
+      </div>
+      <div class="muted msg" id="staffMsg"></div>
     </div>
     <div id="staffArea" hidden>
       <div class="tabs">
-        <button data-feed="modcalls" class="active">Mod calls</button>
+        <button data-feed="insights" class="active">Insights</button>
+        <button data-feed="modcalls">Mod calls</button>
         <button data-feed="joinlogs">Join logs</button>
         <button data-feed="killlogs">Kill logs</button>
         <button data-feed="commandlogs">Command logs</button>
         <button data-feed="melonlymembers" id="melonlyTab" hidden>Melonly members</button>
+        <button data-feed="announce" id="announceTab" hidden>Send message</button>
       </div>
-      <div class="table-wrap" style="max-height:420px"><table id="feedTable"></table></div>
-      <div class="muted" id="feedNote" style="margin-top:8px"></div>
+      <div id="insightsView"></div>
+      <div id="feedView" hidden>
+        <div class="table-wrap" style="max-height:420px"><table id="feedTable"></table></div>
+        <div class="muted" id="feedNote" style="margin-top:8px"></div>
+      </div>
+      <div id="announceView" hidden>
+        <div class="row" style="margin-bottom:8px">
+          <select id="annType" aria-label="Message type"><option value="message">Server message (:m)</option><option value="hint">Hint (:h)</option></select>
+        </div>
+        <textarea id="annText" rows="3" maxlength="200" placeholder="Message to show in-game (max 200 characters)"></textarea>
+        <div class="row" style="margin-top:8px;align-items:center"><button class="primary" id="annGo">Send</button><span class="muted" id="annCount">0 / 200</span></div>
+        <div class="msg" id="annMsg"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -300,6 +338,92 @@ async function loadMelonly() {
   } catch {}
 }
 
+// ---------- Session / Discord login ----------
+let me = { authEnabled: false, user: null, staff: false };
+
+async function loadMe() {
+  try { me = await (await fetch('/api/me')).json(); } catch { return; }
+  const box = $('userBox'); box.textContent = '';
+  if (me.user) {
+    const wrap = el('div', undefined, 'user');
+    if (me.user.avatar) { const img = el('img', undefined, 'avatar'); img.src = me.user.avatar; img.alt = ''; wrap.append(img); }
+    wrap.append(el('span', me.user.name));
+    const out = el('a', 'Log out', 'link'); out.href = '/auth/logout'; wrap.append(out);
+    box.append(wrap);
+  } else if (me.authEnabled) {
+    const a = el('a', 'Log in with Discord', 'btn'); a.href = '/auth/login'; box.append(a);
+  }
+  $('discordLoginRow').hidden = !(me.authEnabled && !me.staff);
+  $('keyRow').hidden = !me.staffKeyEnabled;
+  $('announceTab').hidden = !(me.announceEnabled);
+  if (!me.authEnabled && !me.staffKeyEnabled) $('staffCard').hidden = true;
+  if (me.user && me.authEnabled && !me.staff) $('staffMsg').textContent = 'You’re logged in, but your account doesn’t have a staff role.';
+  renderVerify();
+  if (me.staff || staffKey) loadView();
+}
+
+// ---------- Web verification ----------
+let vStart = null;
+function renderVerify() {
+  const card = $('verifyCard'), body = $('verifyBody');
+  if (!me.verifyEnabled) { card.hidden = true; return; }
+  card.hidden = false; body.textContent = '';
+  const msg = el('div', '', 'msg');
+  const say = (t, ok) => { msg.textContent = t; msg.className = 'msg ' + (ok ? 'ok' : 'err'); };
+
+  if (!me.user) {
+    $('verifyState').textContent = '';
+    body.append(el('p', 'Log in with Discord, then link your Roblox account to get your verified role.', 'muted'));
+    const a = el('a', 'Log in with Discord', 'btn'); a.href = '/auth/login'; body.append(a);
+    return;
+  }
+  if (me.inGuild === false) { body.append(el('p', 'Join our Discord server first, then log in again.', 'muted')); return; }
+
+  if (me.link) {
+    $('verifyState').textContent = 'verified';
+    body.append(el('p', `You’re verified as ${me.link.robloxUsername}.`));
+    const b = el('button', 'Unlink my account');
+    b.onclick = async () => {
+      b.disabled = true;
+      const r = await fetch('/api/verify/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (r.ok) { vStart = null; await loadMe(); } else { b.disabled = false; say((await r.json()).error || 'Could not unlink.'); }
+    };
+    body.append(b, msg);
+    return;
+  }
+
+  $('verifyState').textContent = '';
+  if (!vStart) {
+    body.append(el('p', 'Enter your Roblox username. I’ll give you a short code to put in your profile’s About section.', 'muted'));
+    const row = el('div', undefined, 'row');
+    const input = el('input'); input.type = 'text'; input.placeholder = 'Roblox username'; input.maxLength = 20; input.setAttribute('aria-label', 'Roblox username');
+    const go = el('button', 'Get my code', 'primary');
+    go.onclick = async () => {
+      go.disabled = true; say('', true);
+      const r = await fetch('/api/verify/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: input.value }) });
+      const d = await r.json();
+      if (r.ok) { vStart = d; renderVerify(); } else { go.disabled = false; say(d.error || 'Something went wrong.'); }
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+    row.append(input, go); body.append(row, msg);
+  } else {
+    body.append(el('p', `Add this code anywhere in the About section of ${vStart.robloxUsername}’s Roblox profile, save it, then press the button. It expires in ${vStart.minutes} minutes.`, 'muted'));
+    body.append(el('div', vStart.code, 'code'));
+    const row = el('div', undefined, 'row');
+    const done = el('button', 'I’ve added the code', 'primary');
+    const cancel = el('button', 'Start over');
+    done.onclick = async () => {
+      done.disabled = true; say('Checking…', true);
+      const r = await fetch('/api/verify/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await r.json();
+      if (r.ok) { vStart = null; await loadMe(); if (d.notes && d.notes.length) { const m = $('verifyBody'); m.append(el('div', d.notes.join(' '), 'msg err')); } }
+      else { done.disabled = false; say(d.error || 'Something went wrong.'); }
+    };
+    cancel.onclick = () => { vStart = null; renderVerify(); };
+    row.append(done, cancel); body.append(row, msg);
+  }
+}
+
 // ---------- Staff panel ----------
 function fmtCell(key, val) {
   if (val === null || val === undefined) return '–';
@@ -319,17 +443,43 @@ function renderFeed(rows) {
   table.append(thead, tbody);
   $('feedNote').textContent = `${rows.length} entries, newest first where available.`;
 }
-async function loadFeed() {
-  if (!staffKey) return;
-  const r = await fetch('/api/staff/' + feed, { headers: { 'x-staff-key': staffKey } });
+function listBlock(title, rows) {
+  const box = el('div'); box.append(el('h3', title));
+  if (!rows.length) { box.append(el('div', 'No data yet.', 'muted')); return box; }
+  const ol = document.createElement('ol');
+  for (const r of rows) { const li = document.createElement('li'); li.append(document.createTextNode(r.name || '(unknown)'), el('span', ` · ${r.count}`)); ol.append(li); }
+  box.append(ol); return box;
+}
+function renderInsights(d) {
+  const v = $('insightsView'); v.textContent = '';
+  const stats = el('div', undefined, 'grid');
+  const mk = (label, value) => { const c = el('div', undefined, 'card stat'); c.append(el('div', label, 'label'), el('div', String(value), 'value')); return c; };
+  stats.append(
+    mk('Mod calls', d.modCalls.total), mk('Answered', d.modCalls.answered), mk('Unanswered', d.modCalls.unanswered),
+    mk('Joins (last hour)', d.joinsLastHour), mk('Kills logged', d.killCount), mk('Unique joiners', d.uniquePlayersInLog));
+  const lists = el('div', undefined, 'lists');
+  lists.append(listBlock('Top killers', d.topKillers), listBlock('Most killed', d.topVictims),
+               listBlock('Most commands used', d.topCommandUsers), listBlock('Popular commands', d.topCommands));
+  v.append(stats, lists);
+}
+function showView(name) {
+  $('insightsView').hidden = name !== 'insights';
+  $('announceView').hidden = name !== 'announce';
+  $('feedView').hidden = ['insights', 'announce'].includes(name);
+}
+async function loadView() {
+  const headers = staffKey ? { 'x-staff-key': staffKey } : {};
+  if (feed === 'announce') { showView('announce'); $('staffLogin').hidden = true; $('staffArea').hidden = false; return; }
+  const r = await fetch('/api/staff/' + feed, { headers });
   if (r.status === 401) {
-    staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {}
-    $('staffArea').hidden = true; $('staffLogin').hidden = false; $('staffMsg').textContent = 'Wrong staff key.'; return;
+    if (staffKey) { staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {} $('staffMsg').textContent = 'Wrong staff key.'; }
+    $('staffArea').hidden = true; $('staffLogin').hidden = false; return;
   }
   if (r.status === 404) { $('staffMsg').textContent = 'The staff panel is disabled on this server.'; return; }
-  $('staffLogin').hidden = true; $('staffArea').hidden = false;
-  if (!r.ok) { $('feedTable').textContent = ''; $('feedNote').textContent = 'Could not load this feed right now.'; return; }
-  renderFeed(await r.json());
+  $('staffLogin').hidden = true; $('staffArea').hidden = false; showView(feed);
+  if (!r.ok) { $('feedTable').textContent = ''; $('feedNote').textContent = 'Could not load this right now.'; $('insightsView').textContent = 'Could not load this right now.'; return; }
+  const data = await r.json();
+  if (feed === 'insights') renderInsights(data); else renderFeed(data);
 }
 
 // ---------- Wiring ----------
@@ -349,16 +499,29 @@ $('vehSearch').addEventListener('input', renderVehicles);
 $('staffGo').addEventListener('click', () => {
   staffKey = $('staffKey').value;
   try { sessionStorage.setItem('staffKey', staffKey); } catch {}
-  $('staffMsg').textContent = ''; loadFeed();
+  $('staffMsg').textContent = ''; loadView();
+});
+$('annText').addEventListener('input', () => { $('annCount').textContent = `${$('annText').value.length} / 200`; });
+$('annGo').addEventListener('click', async () => {
+  const btn = $('annGo'), msg = $('annMsg');
+  btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Sending…';
+  try {
+    const headers = { 'Content-Type': 'application/json' }; if (staffKey) headers['x-staff-key'] = staffKey;
+    const r = await fetch('/api/staff/announce', { method: 'POST', headers, body: JSON.stringify({ type: $('annType').value, message: $('annText').value }) });
+    const d = await r.json();
+    if (r.ok) { msg.className = 'msg ok'; msg.textContent = 'Sent!'; $('annText').value = ''; $('annCount').textContent = '0 / 200'; }
+    else { msg.className = 'msg err'; msg.textContent = d.error || 'Could not send.'; }
+  } catch { msg.className = 'msg err'; msg.textContent = 'Could not reach the server.'; }
+  btn.disabled = false;
 });
 document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('[data-feed]').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active'); feed = btn.dataset.feed; $('feedNote').textContent = 'Loading…'; loadFeed();
+  btn.classList.add('active'); feed = btn.dataset.feed; $('feedNote').textContent = 'Loading…'; loadView();
 }));
 
-loadStats(); loadFeed(); loadMelonly(); loadHistory();
+loadStats(); loadMe(); loadMelonly(); loadHistory();
 setInterval(loadStats, 10000);
-setInterval(loadFeed, 15000);
+setInterval(() => { if (!$('staffArea').hidden && feed !== 'announce') loadView(); }, 15000);
 setInterval(loadHistory, 60000);
 setInterval(loadMelonly, 60000);
 </script>
