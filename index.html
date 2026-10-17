@@ -7,37 +7,46 @@
 <style>
   :root {
     --bg: #f4f5f7; --card: #ffffff; --text: #14161a; --muted: #5d6573;
-    --line: #e1e4ea; --accent: #2563eb; --good: #16a34a; --warn: #d97706;
+    --line: #e1e4ea; --accent: #2563eb; --accent-soft: rgba(37,99,235,.12);
+    --good: #16a34a; --warn: #d97706; --bad: #dc2626;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0e1116; --card: #171b22; --text: #e8eaee; --muted: #98a1b0;
-      --line: #262c36; --accent: #5b8def; --good: #34d17a; --warn: #f0a23b;
+      --line: #262c36; --accent: #5b8def; --accent-soft: rgba(91,141,239,.18);
+      --good: #34d17a; --warn: #f0a23b; --bad: #f26b6b;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 48px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 56px; }
   header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
   h1 { font-size: 22px; margin: 0; }
   .live { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
   .dot.off { background: var(--warn); }
-  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 16px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
   .stat .label { color: var(--muted); font-size: 13px; }
-  .stat .value { font-size: 30px; font-weight: 650; margin-top: 2px; }
-  h2 { font-size: 15px; margin: 0 0 12px; }
+  .stat .value { font-size: 28px; font-weight: 650; margin-top: 2px; }
+  h2 { font-size: 15px; margin: 0 0 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
   .two { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 16px; }
+  .section { margin-bottom: 16px; }
   .bar-row { margin-bottom: 10px; }
   .bar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
   .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
   .bar > span { display: block; height: 100%; background: var(--accent); }
   .chip { display: inline-block; padding: 2px 8px; margin: 0 6px 6px 0; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; }
-  input[type=text], input[type=password] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }
+  .badge.bad { background: rgba(220,38,38,.14); color: var(--bad); }
+  input[type=text], input[type=password], select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
          background: var(--bg); color: var(--text); font: inherit; }
-  .table-wrap { overflow-x: auto; max-height: 340px; overflow-y: auto; margin-top: 10px; }
+  input[type=text], input[type=password] { width: 100%; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters input { flex: 1 1 200px; width: auto; }
+  .table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; margin-top: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--card); }
@@ -45,8 +54,17 @@
   .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
   button.active, button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; }
   .row { display: flex; gap: 8px; }
+  .call { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .call:last-child { border-bottom: 0; }
+  .call .top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); vertical-align: -1px; margin-right: 6px; }
+  .chart-box { width: 100%; }
+  .chart-box svg { width: 100%; height: 150px; display: block; }
+  .chart-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; flex-wrap: wrap; gap: 6px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -60,8 +78,17 @@
     <div class="card stat"><div class="label">Players online</div><div class="value" id="players">–</div></div>
     <div class="card stat"><div class="label">In queue</div><div class="value" id="queue">–</div></div>
     <div class="card stat"><div class="label">Staff in-game</div><div class="value" id="staffCount">–</div></div>
+    <div class="card stat"><div class="label">Active 911 calls</div><div class="value" id="callCount">–</div></div>
+    <div class="card stat"><div class="label">Vehicles spawned</div><div class="value" id="vehCount">–</div></div>
+    <div class="card stat"><div class="label">Peak (session)</div><div class="value" id="peak">–</div></div>
     <div class="card stat" id="melonlyCard" hidden><div class="label" id="melonlyLabel">Melonly members</div><div class="value" id="melonlyCount">–</div></div>
     <div class="card stat" id="verifiedCard" hidden><div class="label">Verified members</div><div class="value" id="verified">–</div></div>
+  </div>
+
+  <div class="card section">
+    <h2>Players over time <small id="chartRange"></small></h2>
+    <div class="chart-box"><svg id="chart" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Player count over time"></svg></div>
+    <div class="chart-meta"><span id="chartLeft"></span><span id="chartRight"></span></div>
   </div>
 
   <div class="two">
@@ -69,11 +96,27 @@
     <div class="card"><h2>Staff on duty</h2><div id="staff" class="muted">Loading…</div></div>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
-    <h2>Online players</h2>
-    <input type="text" id="search" placeholder="Search players…" aria-label="Search players">
+  <div class="two">
+    <div class="card"><h2>Active emergency calls <small id="callsNote"></small></h2><div id="calls" class="muted">Loading…</div></div>
+    <div class="card"><h2>Server info</h2><dl class="kv" id="info"></dl></div>
+  </div>
+
+  <div class="card section">
+    <h2>Online players <small id="playerNote"></small></h2>
+    <div class="filters">
+      <input type="text" id="search" placeholder="Search players, callsigns, streets…" aria-label="Search players">
+      <select id="teamFilter" aria-label="Filter by team"><option value="">All teams</option></select>
+    </div>
     <div class="table-wrap">
-      <table><thead><tr><th>Player</th><th>Team</th><th>Role</th></tr></thead><tbody id="playerRows"></tbody></table>
+      <table><thead><tr><th>Player</th><th>Team</th><th>Callsign</th><th>Location</th><th>Wanted</th><th>Role</th></tr></thead><tbody id="playerRows"></tbody></table>
+    </div>
+  </div>
+
+  <div class="card section">
+    <h2>Spawned vehicles <small id="vehNote"></small></h2>
+    <input type="text" id="vehSearch" placeholder="Search by vehicle, owner, or plate…" aria-label="Search vehicles">
+    <div class="table-wrap">
+      <table><thead><tr><th>Vehicle</th><th>Owner</th><th>Plate</th><th>Livery</th><th>Colour</th></tr></thead><tbody id="vehRows"></tbody></table>
     </div>
   </div>
 
@@ -92,69 +135,204 @@
         <button data-feed="joinlogs">Join logs</button>
         <button data-feed="killlogs">Kill logs</button>
         <button data-feed="commandlogs">Command logs</button>
-        <button data-feed="melonlymembers">Melonly members</button>
+        <button data-feed="melonlymembers" id="melonlyTab" hidden>Melonly members</button>
       </div>
-      <pre id="feedOut" class="muted">Loading…</pre>
+      <div class="table-wrap" style="max-height:420px"><table id="feedTable"></table></div>
+      <div class="muted" id="feedNote" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let allPlayers = [];
+let data = null;
 let staffKey = '';
 let feed = 'modcalls';
-
+let peak = 0;
 try { staffKey = sessionStorage.getItem('staffKey') || ''; } catch {}
 
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+const ago = ts => {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
+};
+
+// ---------- Main stats ----------
 function render(d) {
+  data = d;
   $('title').textContent = d.name || 'ERLC Live Dashboard';
   $('players').textContent = d.max ? `${d.current} / ${d.max}` : d.current;
   $('queue').textContent = d.queue;
   $('staffCount').textContent = d.staff.length;
+  $('callCount').textContent = d.calls.length;
+  $('vehCount').textContent = d.vehicleCount;
+  peak = Math.max(peak, d.current);
+  $('peak').textContent = peak;
   if (d.verified !== null) { $('verifiedCard').hidden = false; $('verified').textContent = d.verified; }
 
+  // teams
   const teamsEl = $('teams'); teamsEl.textContent = '';
   const entries = Object.entries(d.teams).sort((a, b) => b[1] - a[1]);
   if (!entries.length) teamsEl.textContent = 'Nobody is online right now.';
   const total = Math.max(d.current, 1);
   for (const [team, n] of entries) {
-    const row = document.createElement('div'); row.className = 'bar-row';
-    const top = document.createElement('div'); top.className = 'bar-top';
-    const a = document.createElement('span'); a.textContent = team;
-    const b = document.createElement('span'); b.textContent = n;
-    top.append(a, b);
-    const bar = document.createElement('div'); bar.className = 'bar';
-    const fill = document.createElement('span'); fill.style.width = `${Math.round(n / total * 100)}%`;
+    const row = el('div', undefined, 'bar-row');
+    const top = el('div', undefined, 'bar-top'); top.append(el('span', team), el('span', n));
+    const bar = el('div', undefined, 'bar'); const fill = el('span'); fill.style.width = `${Math.round(n / total * 100)}%`;
     bar.append(fill); row.append(top, bar); teamsEl.append(row);
   }
 
+  // team filter (keep selection)
+  const sel = $('teamFilter'); const keep = sel.value;
+  sel.textContent = ''; sel.append(new Option('All teams', ''));
+  for (const [team] of entries) sel.append(new Option(team, team));
+  sel.value = entries.some(([t]) => t === keep) ? keep : '';
+
+  // staff
   const staffEl = $('staff'); staffEl.textContent = '';
   if (!d.staff.length) staffEl.textContent = 'No staff in-game.';
-  for (const s of d.staff) {
-    const c = document.createElement('span'); c.className = 'chip';
-    c.textContent = `${s.name} · ${s.permission}`;
-    staffEl.append(c);
+  for (const s of d.staff) staffEl.append(el('span', `${s.name} · ${s.permission}`, 'chip'));
+
+  // calls
+  const callsEl = $('calls'); callsEl.textContent = '';
+  $('callsNote').textContent = d.calls.length ? `${d.calls.length} active` : '';
+  if (!d.calls.length) callsEl.textContent = 'No active emergency calls.';
+  for (const c of d.calls.slice(0, 12)) {
+    const box = el('div', undefined, 'call');
+    const top = el('div', undefined, 'top');
+    top.append(el('strong', `#${c.number} · ${c.team || 'Unknown'}`), el('span', c.startedAt ? ago(c.startedAt) : '', 'muted'));
+    box.append(top);
+    if (c.description) box.append(el('div', c.description));
+    const meta = [c.where, c.responders ? `${c.responders} responding` : 'No responders'].filter(Boolean).join(' · ');
+    box.append(el('div', meta, 'muted'));
+    callsEl.append(box);
   }
 
-  allPlayers = d.players;
-  renderPlayers();
+  // server info
+  const info = $('info'); info.textContent = '';
+  const rows = [['Players', d.max ? `${d.current} of ${d.max}` : String(d.current)]];
+  if (d.teamBalance !== null) rows.push(['Team balance', d.teamBalance ? 'On' : 'Off']);
+  if (d.accVerifiedReq) rows.push(['Account verification', d.accVerifiedReq]);
+  if (d.joinKey) rows.push(['Join code', d.joinKey]);
+  for (const [k, v] of rows) info.append(el('dt', k), el('dd', v));
+
+  renderPlayers(); renderVehicles();
   $('dot').className = 'dot';
   $('updated').textContent = 'Updated ' + new Date(d.updatedAt).toLocaleTimeString();
 }
 
 function renderPlayers() {
-  const q = $('search').value.trim().toLowerCase();
+  if (!data) return;
+  const q = $('search').value.trim().toLowerCase(), team = $('teamFilter').value;
   const body = $('playerRows'); body.textContent = '';
-  for (const p of allPlayers.filter(p => p.name.toLowerCase().includes(q))) {
+  const rows = data.players.filter(p =>
+    (!team || p.team === team) &&
+    [p.name, p.callsign, p.street, p.postal, p.team].join(' ').toLowerCase().includes(q));
+  $('playerNote').textContent = `${rows.length} shown`;
+  for (const p of rows) {
     const tr = document.createElement('tr');
-    for (const val of [p.name, p.team, p.permission || 'Normal']) {
-      const td = document.createElement('td'); td.textContent = val; tr.append(td);
-    }
+    const loc = [p.street, p.postal ? `(Postal ${p.postal})` : ''].filter(Boolean).join(' ');
+    for (const val of [p.name, p.team, p.callsign || '–', loc || '–']) tr.append(el('td', val));
+    const w = el('td'); if (p.wanted > 0) w.append(el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad')); else w.textContent = '–';
+    tr.append(w, el('td', p.permission));
     body.append(tr);
   }
+  if (!rows.length) { const tr = document.createElement('tr'); const td = el('td', 'No players match.', 'muted'); td.colSpan = 6; tr.append(td); body.append(tr); }
 }
 
+function renderVehicles() {
+  if (!data) return;
+  const q = $('vehSearch').value.trim().toLowerCase();
+  const body = $('vehRows'); body.textContent = '';
+  const rows = data.vehicles.filter(v => [v.name, v.owner, v.plate, v.texture].join(' ').toLowerCase().includes(q));
+  $('vehNote').textContent = data.vehicleCount > data.vehicles.length ? `showing ${data.vehicles.length} of ${data.vehicleCount}` : `${rows.length} shown`;
+  for (const v of rows) {
+    const tr = document.createElement('tr');
+    for (const val of [v.name, v.owner, v.plate, v.texture || '–']) tr.append(el('td', val));
+    const c = el('td'); const sw = el('span', undefined, 'swatch');
+    if (/^#[0-9a-f]{3,8}$/i.test(v.colorHex)) sw.style.background = v.colorHex;
+    c.append(sw, document.createTextNode(v.colorName || '–')); tr.append(c);
+    body.append(tr);
+  }
+  if (!rows.length) { const tr = document.createElement('tr'); const td = el('td', 'No vehicles to show.', 'muted'); td.colSpan = 5; tr.append(td); body.append(tr); }
+}
+
+// ---------- Chart ----------
+async function loadHistory() {
+  try {
+    const pts = await (await fetch('/api/history')).json();
+    const svg = $('chart'); svg.textContent = '';
+    if (pts.length < 2) { $('chartLeft').textContent = 'Collecting data… check back in a few minutes.'; $('chartRight').textContent = ''; $('chartRange').textContent = ''; return; }
+    const W = 600, H = 150, pad = 8;
+    const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+    const max = Math.max(...pts.map(p => p.players), 1);
+    const x = t => pad + (t - t0) / Math.max(t1 - t0, 1) * (W - pad * 2);
+    const y = v => H - pad - v / max * (H - pad * 2);
+    const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.players).toFixed(1)}`).join(' ');
+    const ns = 'http://www.w3.org/2000/svg';
+    const area = document.createElementNS(ns, 'polygon');
+    area.setAttribute('points', `${x(t0)},${H - pad} ${line} ${x(t1)},${H - pad}`);
+    area.setAttribute('fill', 'var(--accent-soft)');
+    const poly = document.createElementNS(ns, 'polyline');
+    poly.setAttribute('points', line); poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', 'var(--accent)'); poly.setAttribute('stroke-width', '2'); poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(area, poly);
+    const mins = Math.round((t1 - t0) / 60000);
+    $('chartRange').textContent = mins >= 120 ? `last ${Math.round(mins / 60)}h` : `last ${mins} min`;
+    $('chartLeft').textContent = `Peak ${max} players`;
+    $('chartRight').textContent = `Now ${pts[pts.length - 1].players}`;
+    peak = Math.max(peak, max); $('peak').textContent = peak;
+  } catch {}
+}
+
+// ---------- Melonly ----------
+async function loadMelonly() {
+  try {
+    const d = await (await fetch('/api/melonly')).json();
+    if (!d.enabled) return;
+    $('melonlyTab').hidden = false;
+    if (d.error) return;
+    $('melonlyCard').hidden = false;
+    $('melonlyLabel').textContent = (d.name ? d.name + ' · ' : '') + 'Melonly members';
+    $('melonlyCount').textContent = d.members;
+  } catch {}
+}
+
+// ---------- Staff panel ----------
+function fmtCell(key, val) {
+  if (val === null || val === undefined) return '–';
+  if (/timestamp|startedat/i.test(key) && typeof val === 'number') return `${new Date(val * 1000).toLocaleString()} (${ago(val)})`;
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+}
+function renderFeed(rows) {
+  const table = $('feedTable'); table.textContent = '';
+  if (!Array.isArray(rows)) rows = rows && (rows.data || rows.members) ? (rows.data || rows.members) : [];
+  if (!rows.length) { $('feedNote').textContent = 'Nothing to show right now.'; return; }
+  const cols = [...new Set(rows.flatMap(r => Object.keys(r)))].slice(0, 8);
+  const head = document.createElement('tr'); for (const c of cols) head.append(el('th', c));
+  const thead = document.createElement('thead'); thead.append(head);
+  const tbody = document.createElement('tbody');
+  for (const r of rows) { const tr = document.createElement('tr'); for (const c of cols) tr.append(el('td', fmtCell(c, r[c]))); tbody.append(tr); }
+  table.append(thead, tbody);
+  $('feedNote').textContent = `${rows.length} entries, newest first where available.`;
+}
+async function loadFeed() {
+  if (!staffKey) return;
+  const r = await fetch('/api/staff/' + feed, { headers: { 'x-staff-key': staffKey } });
+  if (r.status === 401) {
+    staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {}
+    $('staffArea').hidden = true; $('staffLogin').hidden = false; $('staffMsg').textContent = 'Wrong staff key.'; return;
+  }
+  if (r.status === 404) { $('staffMsg').textContent = 'The staff panel is disabled on this server.'; return; }
+  $('staffLogin').hidden = true; $('staffArea').hidden = false;
+  if (!r.ok) { $('feedTable').textContent = ''; $('feedNote').textContent = 'Could not load this feed right now.'; return; }
+  renderFeed(await r.json());
+}
+
+// ---------- Wiring ----------
 async function loadStats() {
   try {
     const r = await fetch('/api/stats');
@@ -165,48 +343,24 @@ async function loadStats() {
     $('updated').textContent = 'Can’t reach the server. Retrying…';
   }
 }
-
-async function loadFeed() {
-  if (!staffKey) return;
-  const r = await fetch('/api/staff/' + feed, { headers: { 'x-staff-key': staffKey } });
-  if (r.status === 401) {
-    staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {}
-    $('staffArea').hidden = true; $('staffLogin').hidden = false;
-    $('staffMsg').textContent = 'Wrong staff key.';
-    return;
-  }
-  if (r.status === 404) { $('staffMsg').textContent = 'The staff panel is disabled on this server.'; return; }
-  $('staffLogin').hidden = true; $('staffArea').hidden = false;
-  $('feedOut').textContent = r.ok ? JSON.stringify(await r.json(), null, 2) : 'Could not load this feed right now.';
-}
-
 $('search').addEventListener('input', renderPlayers);
+$('teamFilter').addEventListener('change', renderPlayers);
+$('vehSearch').addEventListener('input', renderVehicles);
 $('staffGo').addEventListener('click', () => {
   staffKey = $('staffKey').value;
   try { sessionStorage.setItem('staffKey', staffKey); } catch {}
-  $('staffMsg').textContent = '';
-  loadFeed();
+  $('staffMsg').textContent = ''; loadFeed();
 });
 document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('[data-feed]').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active'); feed = btn.dataset.feed; $('feedOut').textContent = 'Loading…'; loadFeed();
+  btn.classList.add('active'); feed = btn.dataset.feed; $('feedNote').textContent = 'Loading…'; loadFeed();
 }));
 
-async function loadMelonly() {
-  try {
-    const r = await fetch('/api/melonly');
-    const d = await r.json();
-    if (!d.enabled || d.error) return;
-    $('melonlyCard').hidden = false;
-    $('melonlyLabel').textContent = (d.name ? d.name + ' · ' : '') + 'Melonly members';
-    $('melonlyCount').textContent = d.members;
-  } catch {}
-}
-
-loadStats(); loadFeed(); loadMelonly();
-setInterval(loadMelonly, 60000);
+loadStats(); loadFeed(); loadMelonly(); loadHistory();
 setInterval(loadStats, 10000);
 setInterval(loadFeed, 15000);
+setInterval(loadHistory, 60000);
+setInterval(loadMelonly, 60000);
 </script>
 </body>
 </html>
