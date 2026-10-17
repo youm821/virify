@@ -43,6 +43,10 @@ async function erlc(endpoint, ttl = 10_000) {
 
 // ---------- App ----------
 const app = express();
+app.set('trust proxy', 1); // Render sits behind a proxy
+
+// Render pings this to know the service is up
+app.get('/healthz', (req, res) => res.send('ok'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/stats', async (req, res) => {
@@ -102,4 +106,5 @@ app.get('/api/staff/:feed', requireStaff, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Dashboard running at http://localhost:${PORT}`));
+// Render provides PORT and requires listening on 0.0.0.0 (not just localhost)
+app.listen(Number(PORT), '0.0.0.0', () => console.log(`Dashboard listening on port ${PORT}`));
