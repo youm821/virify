@@ -2,9 +2,10 @@ require('dotenv').config();
 const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
+const fs = require('fs');
 
-const { ERLC_SERVER_KEY, STAFF_KEY, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
-const BASE = 'https://api.erlc.gg/v2'; // confirm against the official ERLC docs
+const { ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
+const BASE = 'https://api.erlc.gg/v2'; // ER:LC API v2: https://apidocs.erlc.gg
 
 // Read-only access to the verification bot's database (optional)
 // better-sqlite3 is an optional dependency: if it isn't installed (or the DB is missing),
@@ -21,24 +22,51 @@ try {
 // The key stays on the server. Caching keeps you under ERLC rate limits
 // no matter how many people have the dashboard open.
 const cache = new Map();
-async function erlc(endpoint, ttl = 10_000) {
-  const entry = cache.get(endpoint) || {};
+// v2 has one endpoint: GET /v2/server, with sections switched on by query flags
+// (Players, Queue, JoinLogs, KillLogs, CommandLogs, ModCalls, EmergencyCalls, Vehicles).
+async function erlc(flags = [], ttl = 10_000) {
+  const key = [...flags].sort().join(',');
+  const entry = cache.get(key) || {};
   if (entry.data && Date.now() - entry.at < ttl) return entry.data;
   if (entry.pending) return entry.pending;
 
-  const pending = fetch(BASE + endpoint, { headers: { 'server-key': ERLC_SERVER_KEY } })
+  const qs = flags.map(f => `${f}=true`).join('&');
+  const url = `${BASE}/server${qs ? '?' + qs : ''}`;
+  const pending = fetch(url, { headers: { 'server-key': ERLC_SERVER_KEY } })
     .then(async r => {
       if (!r.ok) throw new Error(`ERLC ${r.status}`);
       return r.json();
     })
-    .then(data => { cache.set(endpoint, { data, at: Date.now() }); return data; })
+    .then(data => { cache.set(key, { data, at: Date.now() }); return data; })
     .catch(err => {
-      if (entry.data) { cache.set(endpoint, { data: entry.data, at: entry.at }); return entry.data; } // serve stale
-      cache.delete(endpoint);
+      if (entry.data) { cache.set(key, { data: entry.data, at: entry.at }); return entry.data; } // serve stale
+      cache.delete(key);
       throw err;
     });
-  cache.set(endpoint, { ...entry, pending });
+  cache.set(key, { ...entry, pending });
   return pending;
+}
+
+// ---------- Melonly client (read-only GETs, cached) ----------
+// Docs: https://apidocs.melonly.xyz  |  Base URL and Bearer auth confirmed there.
+const MELONLY_BASE = 'https://api.melonly.xyz/api/v1';
+const mCache = new Map();
+async function melonly(endpoint, ttl = 30_000) {
+  if (!MELONLY_API_TOKEN) throw new Error('MELONLY_API_TOKEN not set');
+  const hit = mCache.get(endpoint);
+  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  try {
+    const r = await fetch(MELONLY_BASE + endpoint, {
+      headers: { Authorization: `Bearer ${MELONLY_API_TOKEN}` },
+    });
+    if (!r.ok) throw new Error(`Melonly ${r.status}`);
+    const data = await r.json();
+    mCache.set(endpoint, { data, at: Date.now() });
+    return data;
+  } catch (err) {
+    if (hit) return hit.data; // serve stale
+    throw err;
+  }
 }
 
 // ---------- App ----------
@@ -46,9 +74,14 @@ const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
 
 // Render pings this to know the service is up
-app.get('/healthz', (req, res) => res.send('ok'));
+app.get('/healthz', (req, res) => res.json({
+  ok: true,
+  pageFound: Boolean(pageDir),
+  erlcKeySet: Boolean(ERLC_SERVER_KEY),
+  staffKeySet: Boolean(STAFF_KEY),
+  melonlyTokenSet: Boolean(MELONLY_API_TOKEN),
+}));
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
-const fs = require('fs');
 const PAGE_DIRS = [path.join(__dirname, 'public'), __dirname];
 const pageDir = PAGE_DIRS.find(d => fs.existsSync(path.join(d, 'index.html')));
 if (pageDir) {
@@ -62,9 +95,10 @@ if (pageDir) {
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const [server, players, queue] = await Promise.all([
-      erlc('/server'), erlc('/server/players'), erlc('/server/queue'),
-    ]);
+    const data = await erlc(['Players', 'Queue']);
+    const server = data;
+    const players = data.Players || [];
+    const queue = data.Queue || [];
 
     const teams = {};
     const staff = [];
@@ -94,6 +128,21 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ---------- Melonly (public summary only) ----------
+app.get('/api/melonly', async (req, res) => {
+  if (!MELONLY_API_TOKEN) return res.json({ enabled: false });
+  try {
+    const [info, members] = await Promise.all([melonly('/server/info'), melonly('/server/members')]);
+    const list = Array.isArray(members) ? members : (members.data || members.members || []);
+    const count = members.total ?? members.pagination?.total ?? list.length;
+    res.set('Cache-Control', 'no-store');
+    res.json({ enabled: true, name: info.name, members: count });
+  } catch (err) {
+    console.error(err.message);
+    res.status(502).json({ enabled: true, error: 'Could not reach the Melonly API.' });
+  }
+});
+
 // ---------- Staff-only panels ----------
 function requireStaff(req, res, next) {
   if (!STAFF_KEY) return res.status(404).json({ error: 'Staff panel disabled.' });
@@ -105,15 +154,22 @@ function requireStaff(req, res, next) {
   next();
 }
 
-const STAFF_FEEDS = { joinlogs: '/server/joinlogs', modcalls: '/server/modcalls', killlogs: '/server/killlogs' };
+const erlcFeed = (flag) => async () => (await erlc([flag]))[flag] || [];
+const STAFF_FEEDS = {
+  joinlogs: erlcFeed('JoinLogs'),
+  modcalls: erlcFeed('ModCalls'),
+  killlogs: erlcFeed('KillLogs'),
+  commandlogs: erlcFeed('CommandLogs'),
+  melonlymembers: () => melonly('/server/members'),
+};
 app.get('/api/staff/:feed', requireStaff, async (req, res) => {
-  const endpoint = STAFF_FEEDS[req.params.feed];
-  if (!endpoint) return res.status(404).json({ error: 'Unknown feed.' });
+  const load = STAFF_FEEDS[req.params.feed];
+  if (!load) return res.status(404).json({ error: 'Unknown feed.' });
   try {
     res.set('Cache-Control', 'no-store');
-    res.json(await erlc(endpoint));
+    res.json(await load());
   } catch (err) {
-    res.status(502).json({ error: 'Could not reach the ERLC API.' });
+    res.status(502).json({ error: 'Could not reach the API (check the token and try again).' });
   }
 });
 
