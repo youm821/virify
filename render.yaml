@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: erlc-dashboard
+    runtime: node
+    rootDir: dashboard
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ERLC_SERVER_KEY
+        sync: false
+      - key: STAFF_KEY
+        sync: false
