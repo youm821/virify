@@ -4,7 +4,7 @@ const path = require('path');
 const express = require('express');
 const fs = require('fs');
 
-const { ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
+const { ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, DB_PATH = '../verify.db', PORT = 3000 } = process.env;
 const BASE = 'https://api.erlc.gg/v2'; // ER:LC API v2: https://apidocs.erlc.gg
 
 // Read-only access to the verification bot's database (optional)
@@ -93,10 +93,12 @@ if (pageDir) {
   ));
 }
 
+// One request pulls everything the public page needs.
+const PUBLIC_FLAGS = ['Players', 'Queue', 'EmergencyCalls', 'Vehicles'];
+
 app.get('/api/stats', async (req, res) => {
   try {
-    const data = await erlc(['Players', 'Queue']);
-    const server = data;
+    const data = await erlc(PUBLIC_FLAGS);
     const players = data.Players || [];
     const queue = data.Queue || [];
 
@@ -107,19 +109,44 @@ app.get('/api/stats', async (req, res) => {
       const team = p.Team || 'Unknown';
       teams[team] = (teams[team] || 0) + 1;
       if (p.Permission && p.Permission !== 'Normal') staff.push({ name, permission: p.Permission });
-      return { name, id, team, permission: p.Permission };
+      const loc = p.Location || {};
+      return {
+        name, id, team,
+        permission: p.Permission || 'Normal',
+        callsign: p.Callsign || '',
+        street: [loc.BuildingNumber, loc.StreetName].filter(Boolean).join(' '),
+        postal: loc.PostalCode || '',
+        wanted: p.WantedStars || 0,
+      };
     });
 
+    const calls = (data.EmergencyCalls || [])
+      .map(c => ({
+        team: c.Team, number: c.CallNumber, description: c.Description || '',
+        where: c.PositionDescriptor || '', startedAt: c.StartedAt, responders: (c.Players || []).length,
+      }))
+      .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+
+    const vehicles = (data.Vehicles || []).slice(0, 300).map(v => ({
+      name: v.Name, owner: v.Owner, plate: v.Plate, texture: v.Texture || '',
+      colorHex: v.ColorHex || '', colorName: v.ColorName || '',
+    }));
+
     let verified = null;
-    if (db) verified = db.prepare('SELECT COUNT(*) AS n FROM links').get().n;
+    if (db) { try { verified = db.prepare('SELECT COUNT(*) AS n FROM links').get().n; } catch {} }
 
     res.set('Cache-Control', 'no-store');
     res.json({
-      name: server.Name,
-      current: server.CurrentPlayers ?? players.length,
-      max: server.MaxPlayers ?? null,
+      name: data.Name,
+      current: data.CurrentPlayers ?? players.length,
+      max: data.MaxPlayers ?? null,
       queue: Array.isArray(queue) ? queue.length : 0,
-      teams, staff, players: list, verified,
+      teamBalance: data.TeamBalance ?? null,
+      accVerifiedReq: data.AccVerifiedReq || null,
+      joinKey: String(SHOW_JOIN_CODE).toLowerCase() === 'true' ? data.JoinKey : null,
+      teams, staff, players: list, calls, vehicles,
+      vehicleCount: (data.Vehicles || []).length,
+      verified,
       updatedAt: Date.now(),
     });
   } catch (err) {
@@ -127,6 +154,19 @@ app.get('/api/stats', async (req, res) => {
     res.status(502).json({ error: 'Could not reach the ERLC API.' });
   }
 });
+
+// ---------- Player-count history (in memory, last 24 hours) ----------
+// Resets whenever the service restarts or sleeps (normal on Render's free plan).
+const history = [];
+async function sample() {
+  try {
+    const d = await erlc(PUBLIC_FLAGS, 55_000);
+    history.push({ t: Date.now(), players: d.CurrentPlayers ?? (d.Players || []).length, queue: (d.Queue || []).length });
+    while (history.length > 1440) history.shift();
+  } catch {}
+}
+if (ERLC_SERVER_KEY) { sample(); setInterval(sample, 60_000); }
+app.get('/api/history', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(history); });
 
 // ---------- Melonly (public summary only) ----------
 app.get('/api/melonly', async (req, res) => {
@@ -154,7 +194,8 @@ function requireStaff(req, res, next) {
   next();
 }
 
-const erlcFeed = (flag) => async () => (await erlc([flag]))[flag] || [];
+const erlcFeed = (flag) => async () =>
+  [...((await erlc([flag]))[flag] || [])].sort((a, b) => (b.Timestamp || 0) - (a.Timestamp || 0)).slice(0, 200);
 const STAFF_FEEDS = {
   joinlogs: erlcFeed('JoinLogs'),
   modcalls: erlcFeed('ModCalls'),
