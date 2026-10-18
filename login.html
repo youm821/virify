@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log in · ERLC Dashboard</title>
+<style>
+  :root { --bg: #f4f5f7; --card: #ffffff; --text: #14161a; --muted: #5d6573; --line: #e1e4ea; --accent: #5865f2; --bad: #dc2626; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e1116; --card: #171b22; --text: #e8eaee; --muted: #98a1b0; --line: #262c36; --accent: #6d79f5; --bad: #f26b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; text-align: center; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  .btn { display: inline-block; padding: 11px 20px; border-radius: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+  .err { color: var(--bad); margin-bottom: 16px; font-size: 14px; }
+  .small { margin-top: 18px; font-size: 13px; }
+  .small a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Members only</h1>
+    <p id="lead">Log in with Discord to view the dashboard.</p>
+    <div class="err" id="err" hidden></div>
+    <a class="btn" href="/auth/login">Log in with Discord</a>
+    <div class="small" id="out" hidden><a href="/auth/logout">Log out of this Discord account</a></div>
+  </main>
+<script>
+  const e = new URLSearchParams(location.search).get('error');
+  if (e === 'notmember') {
+    document.getElementById('lead').textContent = 'You’re logged in, but this account isn’t in our Discord server.';
+    const box = document.getElementById('err');
+    box.textContent = 'Join the server first, or log in with a different Discord account.';
+    box.hidden = false;
+    document.getElementById('out').hidden = false;
+  }
+</script>
+</body>
+</html>
