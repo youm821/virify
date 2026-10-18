@@ -107,6 +107,16 @@
   .tabs.small { margin-bottom: 8px; }
   .tabs.small button { padding: 3px 10px; font-size: 13px; }
 
+  /* ---- Live map ---- */
+  .mapbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .mapbox svg { display: block; width: 100%; height: auto; max-height: 640px; margin: 0 auto; }
+  .map-dot { cursor: pointer; stroke: var(--card); stroke-width: 2; }
+  .map-dot.wanted { stroke: var(--bad); stroke-width: 4; }
+  .map-label { font-size: 14px; fill: var(--text); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; pointer-events: none; }
+  .map-legend { margin-top: 10px; }
+  .maptools { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .maptools label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+
   /* ---- Loading skeletons (replace the old "Loading…" text) ---- */
   @keyframes shimmer { to { background-position: -200% 0; } }
   .skel, .sk {
@@ -149,7 +159,7 @@
 
   <nav class="nav" aria-label="Sections">
     <a href="#overview">Overview</a><a href="#eventsSec">Events</a><a href="#heatCard">Busy hours</a>
-    <a href="#playersSec">Players</a><a href="#vehSec">Vehicles</a><a href="#staffCard">Staff</a>
+    <a href="#mapSec">Map</a><a href="#playersSec">Players</a><a href="#vehSec">Vehicles</a><a href="#staffCard">Staff</a>
   </nav>
 
   <div class="banner" id="banner" role="alert" hidden></div>
@@ -202,6 +212,17 @@
     <h2>Busy hours <small id="heatNote"></small></h2>
     <div style="overflow-x:auto"><div class="heat" id="heat"></div></div>
     <div class="muted" style="font-size:12px;margin-top:6px">Average players by hour, in your local time. Darker means busier.</div>
+  </div>
+
+  <div class="card section" id="mapSec">
+    <h2>Live map <small id="mapNote"></small></h2>
+    <div class="maptools">
+      <select id="mapTeam" aria-label="Filter map by team"><option value="">All teams</option></select>
+      <label><input type="checkbox" id="mapLabels"> Show names</label>
+    </div>
+    <div class="mapbox"><svg id="map" viewBox="0 0 1000 1000" role="img" aria-label="Live map of players"></svg></div>
+    <div class="map-legend" id="mapLegend"></div>
+    <div class="muted" id="mapInfo" style="margin-top:6px;font-size:13px">Click a dot to see who it is.</div>
   </div>
 
   <div class="card section" id="playersSec">
@@ -433,7 +454,7 @@ function render(d) {
     info.append(el('dt', k), dd);
   }
 
-  renderPlayers(); renderVehicles(); renderWanted(); checkAlert(d);
+  renderPlayers(); renderVehicles(); renderWanted(); renderMap(); checkAlert(d);
 }
 
 // ---------- Most wanted ----------
@@ -937,6 +958,85 @@ document.querySelectorAll('[data-at]').forEach(btn => btn.addEventListener('clic
   btn.classList.add('active'); adminTab = btn.dataset.at; loadAdmin();
 }));
 
+// ---------- Live map ----------
+const mapAuto = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
+const TEAM_COLORS = { police: '#3b82f6', sheriff: '#3b82f6', fire: '#ef4444', ems: '#22c55e', dot: '#f59e0b', civilian: '#94a3b8' };
+function teamColor(t) {
+  const k = String(t || '').toLowerCase();
+  for (const [name, c] of Object.entries(TEAM_COLORS)) if (k.includes(name)) return c;
+  let h = 0; for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h} 65% 55%)`;
+}
+function renderMap() {
+  if (!data) return;
+  const svg = $('map'); svg.textContent = '';
+  const ns = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs = {}) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); return e; };
+
+  // team dropdown (keep selection)
+  const sel = $('mapTeam'), keep = sel.value, teams = Object.keys(data.teams).sort();
+  sel.textContent = ''; sel.append(new Option('All teams', ''));
+  for (const t of teams) sel.append(new Option(t, t));
+  sel.value = teams.includes(keep) ? keep : '';
+
+  const located = data.players.filter(p => Number.isFinite(p.x) && Number.isFinite(p.z));
+  const missing = data.players.length - located.length;
+  const cfg = data.map || {};
+  let b = cfg.bounds;
+  const pad = b ? 0 : 50, W = 1000;
+
+  if (!b) {
+    for (const p of located) {
+      mapAuto.minX = Math.min(mapAuto.minX, p.x); mapAuto.maxX = Math.max(mapAuto.maxX, p.x);
+      mapAuto.minZ = Math.min(mapAuto.minZ, p.z); mapAuto.maxZ = Math.max(mapAuto.maxZ, p.z);
+    }
+    if (mapAuto.minX === Infinity) {
+      $('mapNote').textContent = data.players.length ? 'no location data from the API' : 'nobody online';
+      $('mapLegend').textContent = ''; return;
+    }
+    // the auto-fit area only ever grows, so dots don't jump around between refreshes; keep it square
+    const span = Math.max(mapAuto.maxX - mapAuto.minX, mapAuto.maxZ - mapAuto.minZ, 100);
+    const cx = (mapAuto.minX + mapAuto.maxX) / 2, cz = (mapAuto.minZ + mapAuto.maxZ) / 2;
+    b = { minX: cx - span / 2, maxX: cx + span / 2, minZ: cz - span / 2, maxZ: cz + span / 2 };
+  }
+  const sx = b.maxX - b.minX, sz = b.maxZ - b.minZ;
+  const px = x => pad + (x - b.minX) / sx * (W - pad * 2);
+  const py = z => { const t = (z - b.minZ) / sz; return pad + (cfg.flipY ? 1 - t : t) * (W - pad * 2); };
+
+  // background: your map picture if configured, otherwise a plain grid
+  if (cfg.image) {
+    svg.append(mk('image', { href: '/map.png', x: 0, y: 0, width: W, height: W, preserveAspectRatio: 'none' }));
+  } else {
+    svg.append(mk('rect', { x: 0, y: 0, width: W, height: W, fill: 'var(--bg)' }));
+    for (let i = 1; i < 10; i++) {
+      const p = i * W / 10;
+      svg.append(mk('line', { x1: p, y1: 0, x2: p, y2: W, stroke: 'var(--line)', 'stroke-width': 1 }));
+      svg.append(mk('line', { x1: 0, y1: p, x2: W, y2: p, stroke: 'var(--line)', 'stroke-width': 1 }));
+    }
+  }
+
+  const shown = located.filter(p => !sel.value || p.team === sel.value);
+  const labels = $('mapLabels').checked;
+  for (const p of shown) {
+    const cx = px(p.x), cy = py(p.z);
+    const dot = mk('circle', { cx: cx.toFixed(1), cy: cy.toFixed(1), r: 9, fill: teamColor(p.team), class: 'map-dot' + (p.wanted >= 3 ? ' wanted' : '') });
+    const text = [p.name, p.team, p.callsign, p.street].filter(Boolean).join(' · ') + (p.wanted ? ` · ${p.wanted}★` : '');
+    const tip = mk('title'); tip.textContent = text; dot.append(tip);
+    dot.addEventListener('click', () => { $('mapInfo').textContent = text; });
+    svg.append(dot);
+    if (labels) { const t = mk('text', { x: (cx + 13).toFixed(1), y: (cy + 5).toFixed(1), class: 'map-label' }); t.textContent = p.name; svg.append(t); }
+  }
+
+  // legend: teams that currently have a dot
+  const leg = $('mapLegend'); leg.textContent = '';
+  const counts = {}; for (const p of shown) counts[p.team] = (counts[p.team] || 0) + 1;
+  for (const [t, n] of Object.entries(counts).sort((a, c) => c[1] - a[1])) {
+    const chip = el('span', undefined, 'chip'), sw = el('span', undefined, 'swatch'); sw.style.background = teamColor(t);
+    chip.append(sw, document.createTextNode(`${t} · ${n}`)); leg.append(chip);
+  }
+  $('mapNote').textContent = `${shown.length} on map` + (missing ? ` · ${missing} without location` : '');
+}
+
 // ---------- Wiring ----------
 async function loadStats() {
   nextAt = Date.now() + REFRESH_MS;
@@ -958,6 +1058,8 @@ $('logoImg').addEventListener('error', () => { $('logoImg').hidden = true; $('lo
 $('search').addEventListener('input', renderPlayers);
 $('teamFilter').addEventListener('change', renderPlayers);
 $('vehSearch').addEventListener('input', renderVehicles);
+$('mapTeam').addEventListener('change', renderMap);
+$('mapLabels').addEventListener('change', renderMap);
 $('staffGo').addEventListener('click', () => {
   staffKey = $('staffKey').value;
   try { sessionStorage.setItem('staffKey', staffKey); } catch {}

@@ -14,6 +14,15 @@ const STAFF_ROLES = STAFF_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean)
 // Admin role(s): full access to the admin panel (admins also count as staff and members).
 const ADMIN_ROLES = ADMIN_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
 const adminCommandsEnabled = String(ALLOW_ADMIN_COMMANDS).toLowerCase() === 'true';
+// Live map. Optional: put your map picture at public/map.png and set MAP_BOUNDS="minX,minZ,maxX,maxZ"
+// (the in-game coordinates of the picture's top-left and bottom-right edges). Without them the map
+// draws a plain grid that fits itself to where players are. MAP_FLIP_Y=true flips the north/south direction.
+const MAP_BOUNDS = (() => {
+  const n = String(process.env.MAP_BOUNDS || '').split(',').map(Number);
+  return n.length === 4 && n.every(Number.isFinite) && n[2] > n[0] && n[3] > n[1]
+    ? { minX: n[0], minZ: n[1], maxX: n[2], maxZ: n[3] } : null;
+})();
+const MAP_FLIP_Y = String(process.env.MAP_FLIP_Y).toLowerCase() === 'true';
 // Members role(s): people with one of these (or any staff role) can see the members page.
 // Leave MEMBER_ROLE_IDS empty and every person in your Discord server counts as a member.
 const MEMBER_ROLES = MEMBER_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
@@ -186,6 +195,8 @@ app.get('/api/stats', async (req, res) => {
         street: [loc.BuildingNumber, loc.StreetName].filter(Boolean).join(' '),
         postal: loc.PostalCode || '',
         wanted: p.WantedStars || 0,
+        x: Number.isFinite(loc.LocationX) ? loc.LocationX : null,
+        z: Number.isFinite(loc.LocationZ) ? loc.LocationZ : null,
       };
     });
 
@@ -216,6 +227,10 @@ app.get('/api/stats', async (req, res) => {
       joinKey: String(SHOW_JOIN_CODE).toLowerCase() === 'true' ? data.JoinKey : null,
       peaks: { today: meta.peakDay.date === dayKey() ? meta.peakDay.n : 0, allTime: meta.peakAll, allTimeAt: meta.peakAllAt },
       logo: /^https:\/\//.test(process.env.SERVER_LOGO_URL || '') ? process.env.SERVER_LOGO_URL : null,
+      map: {
+        image: Boolean(MAP_BOUNDS && pageDir && fs.existsSync(path.join(pageDir, 'map.png'))),
+        bounds: MAP_BOUNDS, flipY: MAP_FLIP_Y,
+      },
       teams, staff, players: list, calls, vehicles,
       vehicleCount: (data.Vehicles || []).length,
       verified,
