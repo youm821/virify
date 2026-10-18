@@ -287,7 +287,18 @@ app.get('/auth/callback', async (req, res) => {
         code: String(req.query.code), redirect_uri: REDIRECT_URI,
       }),
     });
-    if (!tokenRes.ok) throw new Error(`token exchange ${tokenRes.status} (check the redirect URL in the Discord developer portal)`);
+    if (!tokenRes.ok) {
+      const detail = (await tokenRes.text().catch(() => '')).slice(0, 300);
+      const wait = tokenRes.headers.get('retry-after');
+      console.error(`Discord token exchange failed: ${tokenRes.status}${wait ? ` (retry-after ${wait}s)` : ''} ${detail}`);
+      if (tokenRes.status === 429) {
+        return res.status(429).send('Discord is temporarily rate-limiting sign-ins from this host. Please wait a few minutes, then try once more (repeated tries make the wait longer).');
+      }
+      if (tokenRes.status === 400 || tokenRes.status === 401) {
+        return res.status(502).send('Discord rejected the login. Check DISCORD_CLIENT_SECRET and that the redirect URL in the Discord developer portal matches exactly.');
+      }
+      throw new Error(`token exchange ${tokenRes.status}`);
+    }
     const { access_token } = await tokenRes.json();
     const auth = { Authorization: `Bearer ${access_token}` };
 
