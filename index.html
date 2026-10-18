@@ -93,9 +93,9 @@
          background: var(--bg); border-bottom: 1px solid var(--line); }
   .nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
   .nav a:hover { background: var(--accent-soft); color: var(--accent); }
-  .call.police { border-left: 3px solid #3b82f6; padding-left: 10px; }
-  .call.fire { border-left: 3px solid #ef4444; padding-left: 10px; }
-  .call.ems { border-left: 3px solid #22c55e; padding-left: 10px; }
+  .call.t-police { border-left: 3px solid #3b82f6; padding-left: 10px; }
+  .call.t-fire { border-left: 3px solid #ef4444; padding-left: 10px; }
+  .call.t-ems { border-left: 3px solid #22c55e; padding-left: 10px; }
   .call.alert .warnline { color: var(--bad); font-weight: 600; font-size: 13px; }
   th[data-sort] { cursor: pointer; user-select: none; }
   th.asc::after { content: " ▲"; font-size: 10px; } th.desc::after { content: " ▼"; font-size: 10px; }
@@ -281,6 +281,7 @@ themeApply(themeId, themeCustom);
     <div class="maptools">
       <select id="mapTeam" aria-label="Filter map by team"><option value="">All teams</option></select>
       <label><input type="checkbox" id="mapLabels"> Show names</label>
+      <label><input type="checkbox" id="mapHeat"> Heat map</label>
     </div>
     <div class="mapbox"><svg id="map" viewBox="0 0 1000 1000" role="img" aria-label="Live map of players"></svg></div>
     <div class="map-legend" id="mapLegend"></div>
@@ -406,7 +407,7 @@ const ago = ts => {
 const agoMs = ms => ago(ms / 1000);
 
 // ---------- Connection status: last-updated countdown + banner ----------
-const REFRESH_MS = 10000;
+const REFRESH_MS = (() => { try { return Math.min(120, Math.max(5, Number(localStorage.getItem('refreshSec')) || 10)) * 1000; } catch { return 10000; } })();
 let lastOk = 0;                       // when the last successful refresh happened
 let nextAt = Date.now() + REFRESH_MS; // when the next refresh is due
 let status = 'connecting';            // connecting | ok | erlc | net
@@ -491,7 +492,7 @@ function render(d) {
     const tcls = String(c.team || '').toLowerCase().replace(/[^a-z]/g, '');
     const waited = c.startedAt ? Math.floor(Date.now() / 1000 - c.startedAt) : 0;
     const noOne = !c.responders && waited > 180;
-    const box = el('div', undefined, 'call ' + tcls + (noOne ? ' alert' : ''));
+    const box = el('div', undefined, 'call' + (tcls ? ' t-' + tcls : '') + (noOne ? ' alert' : ''));
     const top = el('div', undefined, 'top');
     top.append(el('strong', `#${c.number} · ${c.team || 'Unknown'}`), el('span', c.startedAt ? ago(c.startedAt) : '', 'muted'));
     box.append(top);
@@ -1054,6 +1055,10 @@ function renderMap() {
       mapAuto.minX = Math.min(mapAuto.minX, p.x); mapAuto.maxX = Math.max(mapAuto.maxX, p.x);
       mapAuto.minZ = Math.min(mapAuto.minZ, p.z); mapAuto.maxZ = Math.max(mapAuto.maxZ, p.z);
     }
+    if ($('mapHeat').checked && heatCells) for (const [x, z] of heatCells) {
+      mapAuto.minX = Math.min(mapAuto.minX, x); mapAuto.maxX = Math.max(mapAuto.maxX, x);
+      mapAuto.minZ = Math.min(mapAuto.minZ, z); mapAuto.maxZ = Math.max(mapAuto.maxZ, z);
+    }
     if (mapAuto.minX === Infinity) {
       $('mapNote').textContent = data.players.length ? 'no location data from the API' : 'nobody online';
       $('mapLegend').textContent = ''; return;
@@ -1076,6 +1081,17 @@ function renderMap() {
       const p = i * W / 10;
       svg.append(mk('line', { x1: p, y1: 0, x2: p, y2: W, stroke: 'var(--line)', 'stroke-width': 1 }));
       svg.append(mk('line', { x1: 0, y1: p, x2: W, y2: p, stroke: 'var(--line)', 'stroke-width': 1 }));
+    }
+  }
+
+  if ($('mapHeat').checked && heatCells && heatCells.length) {
+    const defs = mk('defs'), g = mk('radialGradient', { id: 'hg' });
+    g.append(mk('stop', { offset: '0%', 'stop-color': '#ff5a1f', 'stop-opacity': '0.9' }), mk('stop', { offset: '100%', 'stop-color': '#ff5a1f', 'stop-opacity': '0' }));
+    defs.append(g); svg.append(defs);
+    const mx = Math.max(...heatCells.map(c => c[2])), rad = Math.max(14, 90 / sx * (W - pad * 2));
+    for (const [x, z, v] of heatCells) {
+      svg.append(mk('circle', { cx: px(x).toFixed(1), cy: py(z).toFixed(1), r: rad.toFixed(1), fill: 'url(#hg)',
+        opacity: (0.18 + 0.82 * Math.sqrt(v / mx)).toFixed(2), 'pointer-events': 'none' }));
     }
   }
 
@@ -1124,6 +1140,14 @@ $('teamFilter').addEventListener('change', renderPlayers);
 $('vehSearch').addEventListener('input', renderVehicles);
 $('mapTeam').addEventListener('change', renderMap);
 $('mapLabels').addEventListener('change', renderMap);
+let heatCells = null;
+async function loadMapHeat() {
+  try { heatCells = (await (await fetch('/api/mapheat')).json()).cells; } catch {}
+  renderMap();
+}
+$('mapHeat').addEventListener('change', () => { if ($('mapHeat').checked) loadMapHeat(); else renderMap(); });
+setInterval(() => { if ($('mapHeat').checked) loadMapHeat(); }, 60000);
+try { $('mapLabels').checked = localStorage.getItem('mapNames') === '1'; } catch {}
 $('staffGo').addEventListener('click', () => {
   staffKey = $('staffKey').value;
   try { sessionStorage.setItem('staffKey', staffKey); } catch {}
@@ -1426,6 +1450,22 @@ th, td { padding: 10px 12px; }
 tbody tr:hover { background: var(--accent-soft); }
 .mapbox { border-radius: 10px; }
 
+
+/* calls and lists: tidy, scroll instead of stretching the page */
+.call.t-dot { border-left: 3px solid #f59e0b; padding-left: 10px; }
+#calls, #wanted, #events, #leaderboard { max-height: 340px; overflow-y: auto; }
+.call .warnline { margin-top: 2px; }
+.tabpanel { min-width: 0; }
+
+/* smoother motion */
+@keyframes panelIn { from { opacity: 0; transform: translateY(10px); } }
+.tabpanel:not([hidden]) { animation: panelIn .4s cubic-bezier(.22,1,.36,1); }
+.card, .nav a, button, input, select, tbody tr { transition: background-color .25s ease, border-color .25s ease, color .25s ease, transform .25s cubic-bezier(.22,1,.36,1); }
+.card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.nav a:active, button:active { transform: scale(.97); }
+.map-dot { transition: r .2s ease; } .map-dot:hover { r: 12; }
+html.reduce *, html.reduce *::before, html.reduce *::after { animation: none !important; transition: none !important; }
+
 /* phone: sidebar becomes a bottom tab bar */
 @media (max-width: 860px) {
   .nav { top: auto; width: auto; right: 0; height: 60px; flex-direction: row; padding: 6px 8px; overflow: visible; border-right: 0; border-top: 1px solid var(--line); }
@@ -1437,6 +1477,7 @@ tbody tr:hover { background: var(--accent-soft); }
 </style>
 <script id="sidebar-js">
 (() => {
+  try { if (localStorage.getItem('reduceMotion') === '1') document.documentElement.classList.add('reduce'); } catch {}
   const wrap = document.querySelector('.wrap');
   const nav = wrap && wrap.querySelector('.nav');
   if (!wrap || !nav) return;
@@ -1484,6 +1525,8 @@ tbody tr:hover { background: var(--accent-soft); }
   // tool pages
   const TOOLS = [
     ['/mdt', 'MDT lookup', '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>'],
+    ['/profile', 'My profile', '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg>'],
+    ['/settings', 'Settings', '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>'],
     ['/apply', 'Applications', '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>'],
   ];
   const toolLabel = document.createElement('div'); toolLabel.className = 'side-label'; toolLabel.textContent = 'Tools'; nav.append(toolLabel);

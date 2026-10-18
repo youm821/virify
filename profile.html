@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile</title>
+<style>
+  :root { --bg:#0d0f14; --card:#14171e; --text:#e9ebf1; --muted:#8a93a6; --line:#232834; --accent:#7c6cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:24px 16px 56px; }
+  a { color:var(--accent); text-decoration:none; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-top:14px; animation:in .4s cubic-bezier(.22,1,.36,1); }
+  @keyframes in { from { opacity:0; transform:translateY(8px); } }
+  h2 { font-size:15px; margin:0 0 12px; } .muted { color:var(--muted); }
+  .head { display:flex; gap:14px; align-items:center; } .head img { width:64px; height:64px; border-radius:12px; background:var(--line); }
+  .head h1 { font-size:20px; margin:0; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); }
+  .stat b { display:block; font-size:24px; } .stat span { color:var(--muted); font-size:12px; }
+  .days { display:flex; align-items:flex-end; gap:4px; height:90px; } .days i { flex:1; background:var(--accent); border-radius:3px 3px 0 0; min-height:2px; opacity:.85; transition:height .5s cubic-bezier(.22,1,.36,1); }
+  .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin:4px 0 10px; } .bar span { display:block; height:100%; background:var(--accent); }
+  .row { display:flex; gap:8px; } input { flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  button { padding:9px 16px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
+  .top { display:flex; justify-content:space-between; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/">← Back to dashboard</a> · <a href="/settings">Settings</a>
+  <div class="card"><h2>Look up a player</h2><div class="row"><input id="q" type="text" placeholder="Roblox username" aria-label="Roblox username"><button id="go">Search</button></div><div class="muted" id="err" style="margin-top:8px"></div></div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const el = (t, text, c) => { const e = document.createElement(t); if (text !== undefined) e.textContent = text; if (c) e.className = c; return e; };
+const hm = m => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+async function load(name) {
+  $('err').textContent = '';
+  const r = await fetch('/api/profile' + (name ? '?name=' + encodeURIComponent(name) : ''));
+  if (r.status === 401) { location.href = '/login'; return; }
+  const d = await r.json(), out = $('out'); out.textContent = '';
+  if (!r.ok) { $('err').textContent = d.error || 'Something went wrong.'; return; }
+  if (!d.linked) {
+    const c = el('div', undefined, 'card');
+    c.append(el('h2', `Hi ${d.user.name}`), el('div', 'Verify your Roblox account on the dashboard (Community tab) to get your own profile.', 'muted'));
+    out.append(c); return;
+  }
+  const head = el('div', undefined, 'card'), row = el('div', undefined, 'head');
+  const img = el('img'); img.alt = ''; img.src = `https://www.roblox.com/headshot-thumbnail/image?userId=${encodeURIComponent(d.roblox.id)}&width=150&height=150&format=png`;
+  img.onerror = () => { img.style.visibility = 'hidden'; };
+  const names = el('div'); names.append(el('h1', d.roblox.name), el('div', d.own ? `Discord: ${d.user.name}` : 'Server player', 'muted'));
+  row.append(img, names); head.append(row); out.append(head);
+
+  const stats = el('div', undefined, 'card'), g = el('div', undefined, 'grid');
+  const add = (n, label) => { const s = el('div', undefined, 'stat'); s.append(el('b', n), el('span', label)); g.append(s); };
+  add(hm(d.minutes), 'Total time'); add(hm(d.week), 'Last 7 days'); add(hm(d.month), 'Last 30 days'); add(d.team || '–', 'Main team');
+  if (d.own) add(String(d.applications), 'Applications');
+  stats.append(el('h2', `Playtime since ${new Date(d.since).toLocaleDateString()}`), g); out.append(stats);
+
+  const dc = el('div', undefined, 'card'), bars = el('div', undefined, 'days');
+  const mx = Math.max(...d.days.map(x => x.m), 1);
+  for (const x of d.days) { const b = el('i'); b.style.height = '2px'; b.title = `${x.d}: ${hm(x.m)}`; bars.append(b); requestAnimationFrame(() => requestAnimationFrame(() => { b.style.height = Math.max(2, x.m / mx * 100) + '%'; })); }
+  dc.append(el('h2', 'Last 14 days'), d.days.length ? bars : el('div', 'No activity recorded yet.', 'muted')); out.append(dc);
+
+  const tc = el('div', undefined, 'card'), tot = Object.values(d.teams).reduce((a, b) => a + b, 0) || 1;
+  tc.append(el('h2', 'Teams'));
+  for (const [t, m] of Object.entries(d.teams).sort((a, b) => b[1] - a[1])) {
+    const top = el('div', undefined, 'top'); top.append(el('span', t), el('span', hm(m), 'muted'));
+    const bar = el('div', undefined, 'bar'), f = el('span'); f.style.width = Math.round(m / tot * 100) + '%'; bar.append(f);
+    tc.append(top, bar);
+  }
+  if (!Object.keys(d.teams).length) tc.append(el('div', 'No team data yet.', 'muted')); out.append(tc);
+}
+$('go').onclick = () => { const v = $('q').value.trim(); load(v); };
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });
+load('');
+</script>
+</body>
+</html>
