@@ -162,8 +162,24 @@ app.get(['/', '/index.html'], (req, res, next) => {
   // Never fall back to the staff page for members
   res.status(500).send('members.html is missing. Upload it to the public folder (lowercase, with an s) and redeploy.');
 });
+try {
+  require('./extras')(app, {
+    erlc, loadJson, saveJson,
+    getSession: req => getSession(req),
+    requireStaff: (req, res, next) => requireStaff(req, res, next),
+    audit: (...a) => audit(...a),
+    notify: e => notify(e),
+  });
+} catch (e) { console.warn('extras.js not loaded:', e.message); }
 if (pageDir) {
-  app.use(express.static(pageDir, { index: 'index.html', dotfiles: 'ignore' }));
+  if (pageDir === __dirname) {
+    // Flat folder: only hand out these specific files, never server.js or the data folder
+    const OPEN = new Set(['map.png', 'favicon.ico', 'logo.png']);
+    app.get('/:file', (req, res, next) => OPEN.has(req.params.file) && fs.existsSync(path.join(pageDir, req.params.file))
+      ? res.sendFile(path.join(pageDir, req.params.file)) : next());
+  } else {
+    app.use(express.static(pageDir, { index: false, dotfiles: 'ignore' }));
+  }
 } else {
   console.error('index.html not found. Expected dashboard/public/index.html in your repo.');
   app.get('/', (req, res) => res.status(500).send(

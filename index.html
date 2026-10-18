@@ -1481,6 +1481,17 @@ tbody tr:hover { background: var(--accent-soft); }
     nav.append(a); links[t.id] = a;
   }
 
+  // tool pages
+  const TOOLS = [
+    ['/mdt', 'MDT lookup', '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>'],
+    ['/apply', 'Applications', '<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>'],
+  ];
+  const toolLabel = document.createElement('div'); toolLabel.className = 'side-label'; toolLabel.textContent = 'Tools'; nav.append(toolLabel);
+  for (const [href, label, icon] of TOOLS) {
+    const a = document.createElement('a'); a.href = href; a.insertAdjacentHTML('afterbegin', icon);
+    const sp = document.createElement('span'); sp.textContent = label; a.append(sp); nav.append(a);
+  }
+
   function show(id, toTop) {
     if (!panels[id]) id = 'overview';
     for (const k of Object.keys(panels)) {
