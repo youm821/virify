@@ -512,7 +512,7 @@ async function loadHistory() {
     const x = t => pad + (t - t0) / Math.max(t1 - t0, 1) * (W - pad * 2);
     const y = v => H - pad - v / max * (H - pad * 2);
     const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.players).toFixed(1)}`).join(' ');
-    const ns = 'http://www.w3.org/2000/svg';
+    const ns = 'https://cdn.discordapp.com/icons/1543671305117769779/a35271e308db62579ae770aeaa33c116.webp?size=1024';
     const area = document.createElementNS(ns, 'polygon');
     area.setAttribute('points', `${x(t0)},${H - pad} ${line} ${x(t1)},${H - pad}`);
     area.setAttribute('fill', 'var(--accent-soft)');
