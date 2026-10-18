@@ -104,12 +104,34 @@ app.get('/healthz', (req, res) => res.json({
   discordLoginSet: authEnabled,
   staffRolesSet: STAFF_ROLES.length > 0,
   webVerifyEnabled: verifyEnabled,
+  loginRequired,
   webhookAlerts: /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(DISCORD_WEBHOOK_URL || ''),
   baseUrl: BASE_URL,
 }));
+// ---------- Require Discord login to view anything ----------
+// On by default once Discord login is configured. Set REQUIRE_LOGIN=false to make the site public again.
+const loginRequired = authEnabled && String(process.env.REQUIRE_LOGIN ?? 'true').toLowerCase() !== 'false';
+app.use((req, res, next) => {
+  if (!loginRequired) return next();
+  const p = req.path;
+  if (p === '/healthz' || p === '/login' || p === '/api/me' || p.startsWith('/auth/')) return next();
+  const s = getSession(req);
+  if (s && s.inGuild) return next();
+  if (p.startsWith('/api/')) return res.status(401).json({ error: 'Log in with Discord first.', login: true });
+  return res.redirect(s ? '/login?error=notmember' : '/login');
+});
+
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
 const PAGE_DIRS = [path.join(__dirname, 'public'), __dirname];
 const pageDir = PAGE_DIRS.find(d => fs.existsSync(path.join(d, 'index.html')));
+// Friendly login page (also where signed-out visitors land)
+app.get('/login', (req, res) => {
+  const s = getSession(req);
+  if (s && s.inGuild) return res.redirect('/');
+  const file = pageDir && path.join(pageDir, 'login.html');
+  if (file && fs.existsSync(file)) return res.sendFile(file);
+  res.status(404).send('login.html is missing. Upload dashboard/public/login.html to your repo and redeploy.');
+});
 if (pageDir) {
   app.use(express.static(pageDir, { index: 'index.html', dotfiles: 'ignore' }));
 } else {
