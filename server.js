@@ -7,11 +7,21 @@ const fs = require('fs');
 const {
   ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, ALLOW_ANNOUNCE,
   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_GUILD_ID, DISCORD_BOT_TOKEN, VERIFIED_ROLE_ID,
-  STAFF_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
+  DISCORD_WEBHOOK_URL, QUEUE_ALERT, STAFF_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
 } = process.env;
 const STAFF_ROLES = STAFF_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
 // Render sets RENDER_EXTERNAL_URL automatically; set BASE_URL yourself for a custom domain.
 const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const loadJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf8')); } catch { return fallback; } };
+const saveJson = (file, obj) => {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const p = path.join(DATA_DIR, file);
+    fs.writeFileSync(p + '.tmp', JSON.stringify(obj));
+    fs.renameSync(p + '.tmp', p);
+  } catch (e) { console.error(`Could not save ${file}:`, e.message); }
+};
 const authEnabled = Boolean(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET);
 const verifyEnabled = Boolean(authEnabled && DISCORD_BOT_TOKEN && VERIFIED_ROLE_ID && DISCORD_GUILD_ID);
 const announceEnabled = String(ALLOW_ANNOUNCE).toLowerCase() === 'true';
@@ -94,6 +104,7 @@ app.get('/healthz', (req, res) => res.json({
   discordLoginSet: authEnabled,
   staffRolesSet: STAFF_ROLES.length > 0,
   webVerifyEnabled: verifyEnabled,
+  webhookAlerts: /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(DISCORD_WEBHOOK_URL || ''),
   baseUrl: BASE_URL,
 }));
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
@@ -171,6 +182,24 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ---------- Activity tracking (minutes in-game per player) ----------
+// Every minute each online player earns one minute. Saved to data/activity.json.
+// Like the history chart, this resets if your host wipes its disk on redeploy.
+let activity = loadJson('activity.json', null) || { since: Date.now(), players: {} };
+let activityTicks = 0;
+function trackActivity(players) {
+  for (const p of players) {
+    const [name, id] = String(p.Player).split(':');
+    if (!id) continue;
+    const a = (activity.players[id] ||= { name, minutes: 0, teams: {}, perm: 'Normal' });
+    a.name = name; a.minutes += 1; a.perm = p.Permission || 'Normal';
+    const team = p.Team || 'Unknown';
+    a.teams[team] = (a.teams[team] || 0) + 1;
+  }
+  if (++activityTicks % 5 === 0) saveJson('activity.json', activity);
+}
+const mainTeam = a => Object.entries(a.teams).sort((x, y) => y[1] - x[1])[0]?.[0] || '';
+
 // ---------- Player-count history (in memory, last 24 hours) ----------
 // Resets whenever the service restarts or sleeps (normal on Render's free plan).
 const history = [];
@@ -179,6 +208,7 @@ async function sample() {
     const d = await erlc(PUBLIC_FLAGS, 55_000);
     history.push({ t: Date.now(), players: d.CurrentPlayers ?? (d.Players || []).length, queue: (d.Queue || []).length });
     while (history.length > 1440) history.shift();
+    trackActivity(d.Players || []);
   } catch {}
 }
 if (ERLC_SERVER_KEY) { sample(); setInterval(sample, 60_000); }
@@ -287,7 +317,6 @@ app.get('/auth/logout', (req, res) => { setCookie(res, 'session', '', 0); res.re
 // ---------- Web verification (Roblox <-> Discord) ----------
 // Links are saved to data/links.json. On Render's free plan the disk resets on redeploy,
 // but the Discord role itself is permanent, so members stay verified.
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const LINKS_FILE = path.join(DATA_DIR, 'links.json');
 let links = {};
 try { links = JSON.parse(fs.readFileSync(LINKS_FILE, 'utf8')); } catch {}
@@ -457,6 +486,92 @@ app.post('/api/staff/announce', requireStaff, async (req, res) => {
   }
 });
 
+// ---------- Public activity leaderboard ----------
+app.get('/api/activity', (req, res) => {
+  const rows = Object.values(activity.players)
+    .sort((a, b) => b.minutes - a.minutes).slice(0, 10)
+    .map(a => ({ name: a.name, minutes: a.minutes, team: mainTeam(a) }));
+  res.set('Cache-Control', 'no-store');
+  res.json({ since: activity.since, tracked: Object.keys(activity.players).length, top: rows });
+});
+
+app.get('/api/activity/me', requireLogin, (req, res) => {
+  const link = links[req.session.id];
+  if (!link) return res.json({ linked: false });
+  const a = activity.players[link.robloxId];
+  res.json({ linked: true, minutes: a ? a.minutes : 0, since: activity.since });
+});
+
+app.post('/api/staff/activity/reset', requireStaff, (req, res) => {
+  console.log(`[activity] reset by ${req.staffUser}`);
+  activity = { since: Date.now(), players: {} };
+  saveJson('activity.json', activity);
+  res.json({ ok: true });
+});
+
+// ---------- Events board ----------
+let events = loadJson('events.json', []);
+app.get('/api/events', (req, res) => {
+  const cutoff = Date.now() - 2 * 3600_000; // keep an event visible for 2 hours after it starts
+  res.set('Cache-Control', 'no-store');
+  res.json(events.filter(e => e.startsAt > cutoff).sort((a, b) => a.startsAt - b.startsAt).slice(0, 10));
+});
+app.post('/api/staff/events', requireStaff, (req, res) => {
+  const title = String(req.body.title || '').trim().slice(0, 80);
+  const description = String(req.body.description || '').trim().slice(0, 300);
+  const startsAt = Number(req.body.startsAt);
+  if (!title) return res.status(400).json({ error: 'Give the event a title.' });
+  if (!Number.isFinite(startsAt) || startsAt < Date.now() - 3600_000) return res.status(400).json({ error: 'Pick a start time in the future.' });
+  if (events.length >= 100) return res.status(400).json({ error: 'Too many events. Delete some first.' });
+  events.push({ id: crypto.randomBytes(6).toString('hex'), title, description, startsAt, by: req.staffUser });
+  saveJson('events.json', events);
+  res.json({ ok: true });
+});
+app.delete('/api/staff/events/:id', requireStaff, (req, res) => {
+  const before = events.length;
+  events = events.filter(e => e.id !== req.params.id);
+  if (events.length === before) return res.status(404).json({ error: 'Event not found.' });
+  saveJson('events.json', events);
+  res.json({ ok: true });
+});
+
+// ---------- Discord webhook alerts (optional) ----------
+// Posts new mod calls, and a queue alert, to a channel via a webhook URL.
+const hookOk = /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(DISCORD_WEBHOOK_URL || '');
+async function notify(embed) {
+  if (!hookOk) return;
+  try {
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [{ color: 0x2563eb, timestamp: new Date().toISOString(), ...embed }], allowed_mentions: { parse: [] } }),
+    });
+  } catch (e) { console.error('Webhook failed:', e.message); }
+}
+if (DISCORD_WEBHOOK_URL && !hookOk) console.warn('DISCORD_WEBHOOK_URL doesn’t look like a Discord webhook; alerts are off.');
+if (hookOk && ERLC_SERVER_KEY) {
+  let seen = null, lastQueueAlert = 0;
+  const watch = async () => {
+    try {
+      const d = await erlc(['ModCalls', 'Queue'], 25_000);
+      const calls = d.ModCalls || [];
+      const keyOf = c => `${c.Caller}:${c.Timestamp}`;
+      if (seen === null) seen = new Set(calls.map(keyOf)); // don't announce old calls on startup
+      for (const c of calls) {
+        if (seen.has(keyOf(c))) continue;
+        seen.add(keyOf(c));
+        await notify({ title: 'New mod call', description: `**${nameOf(c.Caller)}** is asking for a moderator.`, color: 0xdc2626 });
+      }
+      const q = (d.Queue || []).length;
+      const limit = Number(QUEUE_ALERT);
+      if (limit > 0 && q >= limit && Date.now() - lastQueueAlert > 30 * 60_000) {
+        lastQueueAlert = Date.now();
+        await notify({ title: 'Queue is filling up', description: `**${q}** players are waiting to join.`, color: 0xd97706 });
+      }
+    } catch {}
+  };
+  setTimeout(watch, 5000); setInterval(watch, 30_000);
+}
+
 const erlcFeed = (flag) => async () =>
   [...((await erlc([flag]))[flag] || [])].sort((a, b) => (b.Timestamp || 0) - (a.Timestamp || 0)).slice(0, 200);
 const STAFF_FEEDS = {
@@ -464,6 +579,10 @@ const STAFF_FEEDS = {
   modcalls: erlcFeed('ModCalls'),
   killlogs: erlcFeed('KillLogs'),
   commandlogs: erlcFeed('CommandLogs'),
+  activity: async () => Object.values(activity.players)
+    .filter(a => a.perm && a.perm !== 'Normal')
+    .sort((a, b) => b.minutes - a.minutes)
+    .map(a => ({ Staff: a.name, Role: a.perm, Hours: (a.minutes / 60).toFixed(1), Minutes: a.minutes, Team: mainTeam(a) })),
   melonlymembers: () => melonly('/server/members'),
 };
 app.get('/api/staff/:feed', requireStaff, async (req, res) => {

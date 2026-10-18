@@ -114,6 +114,11 @@
     <div class="card"><h2>Server info</h2><dl class="kv" id="info"></dl></div>
   </div>
 
+  <div class="two">
+    <div class="card"><h2>Upcoming events</h2><div id="events" class="muted">Loading…</div></div>
+    <div class="card"><h2>Most active players <small id="lbNote"></small></h2><div id="leaderboard" class="muted">Loading…</div></div>
+  </div>
+
   <div class="card section">
     <h2>Online players <small id="playerNote"></small></h2>
     <div class="filters">
@@ -161,6 +166,8 @@
         <button data-feed="joinlogs">Join logs</button>
         <button data-feed="killlogs">Kill logs</button>
         <button data-feed="commandlogs">Command logs</button>
+        <button data-feed="activity">Staff activity</button>
+        <button data-feed="events">Events</button>
         <button data-feed="melonlymembers" id="melonlyTab" hidden>Melonly members</button>
         <button data-feed="announce" id="announceTab" hidden>Send message</button>
       </div>
@@ -168,6 +175,19 @@
       <div id="feedView" hidden>
         <div class="table-wrap" style="max-height:420px"><table id="feedTable"></table></div>
         <div class="muted" id="feedNote" style="margin-top:8px"></div>
+        <div id="actTools" hidden style="margin-top:10px"><button id="actReset">Reset activity counters</button> <span class="muted" id="actMsg"></span></div>
+      </div>
+      <div id="eventsView" hidden>
+        <div class="two" style="margin-bottom:0">
+          <div>
+            <input type="text" id="evTitle" maxlength="80" placeholder="Event title (e.g. Friday Patrol Night)" aria-label="Event title">
+            <div class="row" style="margin-top:8px"><input type="datetime-local" id="evWhen" aria-label="Start time" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit"></div>
+            <textarea id="evDesc" rows="3" maxlength="300" placeholder="Details (optional)" style="margin-top:8px"></textarea>
+            <div class="row" style="margin-top:8px"><button class="primary" id="evGo">Post event</button></div>
+            <div class="msg" id="evMsg"></div>
+          </div>
+          <div id="evAdminList" class="muted">Loading…</div>
+        </div>
       </div>
       <div id="announceView" hidden>
         <div class="row" style="margin-bottom:8px">
@@ -338,6 +358,56 @@ async function loadMelonly() {
   } catch {}
 }
 
+// ---------- Events & leaderboard ----------
+const hm = mins => mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+function until(ms) {
+  const d = ms - Date.now();
+  if (d < -60000) return 'in progress or just ended';
+  if (d < 60000) return 'starting now';
+  const m = Math.round(d / 60000);
+  if (m < 60) return `starts in ${m} min`;
+  if (m < 2880) return `starts in ${Math.floor(m / 60)}h ${m % 60}m`;
+  return `starts in ${Math.round(m / 1440)} days`;
+}
+async function loadEvents() {
+  try {
+    const list = await (await fetch('/api/events')).json();
+    for (const id of ['events', 'evAdminList']) {
+      const box = $(id); if (!box) continue; box.textContent = '';
+      if (!list.length) { box.textContent = 'No events scheduled.'; continue; }
+      for (const e of list) {
+        const c = el('div', undefined, 'call');
+        const top = el('div', undefined, 'top');
+        top.append(el('strong', e.title), el('span', until(e.startsAt), 'muted'));
+        c.append(top, el('div', new Date(e.startsAt).toLocaleString(), 'muted'));
+        if (e.description) c.append(el('div', e.description));
+        if (id === 'evAdminList') {
+          const del = el('button', 'Delete'); del.style.marginTop = '6px';
+          del.onclick = async () => { del.disabled = true; await fetch('/api/staff/events/' + e.id, { method: 'DELETE', headers: staffHeaders() }); loadEvents(); };
+          c.append(del);
+        }
+        box.append(c);
+      }
+    }
+  } catch {}
+}
+async function loadLeaderboard() {
+  try {
+    const d = await (await fetch('/api/activity')).json();
+    const box = $('leaderboard'); box.textContent = '';
+    $('lbNote').textContent = d.tracked ? `since ${new Date(d.since).toLocaleDateString()}` : '';
+    if (!d.top.length) { box.textContent = 'Collecting data… check back soon.'; return; }
+    const ol = document.createElement('ol'); ol.style.cssText = 'margin:0;padding-left:22px';
+    for (const p of d.top) {
+      const li = document.createElement('li'); li.style.padding = '3px 0';
+      li.append(document.createTextNode(p.name + ' '), el('span', `${hm(p.minutes)}${p.team ? ' · ' + p.team : ''}`, 'muted'));
+      ol.append(li);
+    }
+    box.append(ol);
+  } catch {}
+}
+const staffHeaders = () => (staffKey ? { 'x-staff-key': staffKey } : {});
+
 // ---------- Session / Discord login ----------
 let me = { authEnabled: false, user: null, staff: false };
 
@@ -382,6 +452,8 @@ function renderVerify() {
   if (me.link) {
     $('verifyState').textContent = 'verified';
     body.append(el('p', `You’re verified as ${me.link.robloxUsername}.`));
+    const act = el('p', '', 'muted'); body.append(act);
+    fetch('/api/activity/me').then(r => r.json()).then(a => { if (a.linked) act.textContent = `Time in-game since ${new Date(a.since).toLocaleDateString()}: ${hm(a.minutes)}`; }).catch(() => {});
     const b = el('button', 'Unlink my account');
     b.onclick = async () => {
       b.disabled = true;
@@ -465,11 +537,13 @@ function renderInsights(d) {
 function showView(name) {
   $('insightsView').hidden = name !== 'insights';
   $('announceView').hidden = name !== 'announce';
-  $('feedView').hidden = ['insights', 'announce'].includes(name);
+  $('eventsView').hidden = name !== 'events';
+  $('feedView').hidden = ['insights', 'announce', 'events'].includes(name);
+  $('actTools').hidden = name !== 'activity';
 }
 async function loadView() {
   const headers = staffKey ? { 'x-staff-key': staffKey } : {};
-  if (feed === 'announce') { showView('announce'); $('staffLogin').hidden = true; $('staffArea').hidden = false; return; }
+  if (feed === 'announce' || feed === 'events') { showView(feed); $('staffLogin').hidden = true; $('staffArea').hidden = false; if (feed === 'events') loadEvents(); return; }
   const r = await fetch('/api/staff/' + feed, { headers });
   if (r.status === 401) {
     if (staffKey) { staffKey = ''; try { sessionStorage.removeItem('staffKey'); } catch {} $('staffMsg').textContent = 'Wrong staff key.'; }
@@ -501,6 +575,21 @@ $('staffGo').addEventListener('click', () => {
   try { sessionStorage.setItem('staffKey', staffKey); } catch {}
   $('staffMsg').textContent = ''; loadView();
 });
+$('evGo').addEventListener('click', async () => {
+  const msg = $('evMsg'); msg.className = 'msg'; msg.textContent = '';
+  const when = Date.parse($('evWhen').value);
+  const r = await fetch('/api/staff/events', { method: 'POST', headers: { 'Content-Type': 'application/json', ...staffHeaders() },
+    body: JSON.stringify({ title: $('evTitle').value, description: $('evDesc').value, startsAt: when }) });
+  const d = await r.json();
+  if (r.ok) { msg.className = 'msg ok'; msg.textContent = 'Posted!'; $('evTitle').value = ''; $('evDesc').value = ''; loadEvents(); }
+  else { msg.className = 'msg err'; msg.textContent = d.error || 'Could not post the event.'; }
+});
+$('actReset').addEventListener('click', async () => {
+  if (!confirm('Reset all activity counters to zero? This also resets the public leaderboard.')) return;
+  const r = await fetch('/api/staff/activity/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', ...staffHeaders() }, body: '{}' });
+  $('actMsg').textContent = r.ok ? 'Counters reset.' : 'Could not reset.';
+  if (r.ok) { loadView(); loadLeaderboard(); }
+});
 $('annText').addEventListener('input', () => { $('annCount').textContent = `${$('annText').value.length} / 200`; });
 $('annGo').addEventListener('click', async () => {
   const btn = $('annGo'), msg = $('annMsg');
@@ -519,11 +608,13 @@ document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('cl
   btn.classList.add('active'); feed = btn.dataset.feed; $('feedNote').textContent = 'Loading…'; loadView();
 }));
 
-loadStats(); loadMe(); loadMelonly(); loadHistory();
+loadStats(); loadMe(); loadMelonly(); loadHistory(); loadEvents(); loadLeaderboard();
 setInterval(loadStats, 10000);
 setInterval(() => { if (!$('staffArea').hidden && feed !== 'announce') loadView(); }, 15000);
 setInterval(loadHistory, 60000);
 setInterval(loadMelonly, 60000);
+setInterval(loadEvents, 60000);
+setInterval(loadLeaderboard, 60000);
 </script>
 </body>
 </html>
