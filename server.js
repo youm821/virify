@@ -106,6 +106,7 @@ app.get('/healthz', (req, res) => res.json({
   webVerifyEnabled: verifyEnabled,
   loginRequired,
   webhookAlerts: /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(DISCORD_WEBHOOK_URL || ''),
+  discordProxyOn: Boolean(process.env.DISCORD_PROXY_URL),
   baseUrl: BASE_URL,
 }));
 // ---------- Require Discord login to view anything ----------
@@ -282,7 +283,19 @@ const getSession = req => unpackCookie(readCookies(req).session);
 
 // ---------- Discord login (OAuth2) ----------
 const REDIRECT_URI = `${BASE_URL}/auth/callback`;
-const DISCORD_API = 'https://discord.com/api/v10';
+
+// Optional proxy: if Discord is blocking this host's IP (HTTP 429 with an HTML body),
+// set DISCORD_PROXY_URL (your Cloudflare Worker URL) and PROXY_KEY (shared secret) on Render.
+// Only server-side Discord API calls go through it; the browser still talks to Discord directly.
+const DISCORD_PROXY = (process.env.DISCORD_PROXY_URL || '').replace(/\/$/, '');
+const DISCORD_API = (DISCORD_PROXY || 'https://discord.com') + '/api/v10';
+if (DISCORD_PROXY) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts = {}) => String(url).startsWith(DISCORD_API)
+    ? realFetch(url, { ...opts, headers: { ...opts.headers, 'x-proxy-key': process.env.PROXY_KEY } })
+    : realFetch(url, opts);
+}
+console.log('Discord API base:', DISCORD_API, '| proxy on:', Boolean(DISCORD_PROXY));
 
 app.get('/auth/login', (req, res) => {
   if (!authEnabled) return res.status(404).send('Discord login is not configured on this server.');
@@ -290,13 +303,14 @@ app.get('/auth/login', (req, res) => {
   setCookie(res, 'oauth_state', packCookie({ state, exp: Date.now() + 10 * 60_000 }), 600);
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID, redirect_uri: REDIRECT_URI, response_type: 'code',
-    scope: DISCORD_GUILD_ID ? 'identify guilds.members.read' : 'identify', state, prompt: 'none',
+    scope: DISCORD_GUILD_ID ? 'identify guilds.members.read' : 'identify', state,
   });
   res.redirect(`https://discord.com/oauth2/authorize?${params}`);
 });
 
 app.get('/auth/callback', async (req, res) => {
   try {
+    if (req.query.error) return res.status(400).send(`Discord said: ${req.query.error}. Go back and try again.`);
     const st = unpackCookie(readCookies(req).oauth_state);
     if (!st || !req.query.code || st.state !== req.query.state) {
       return res.status(400).send('Login failed (the sign-in link expired). Go back and try again.');
@@ -315,6 +329,9 @@ app.get('/auth/callback', async (req, res) => {
       console.error(`Discord token exchange failed: ${tokenRes.status}${wait ? ` (retry-after ${wait}s)` : ''} ${detail}`);
       if (tokenRes.status === 429) {
         return res.status(429).send('Discord is temporarily rate-limiting sign-ins from this host. Please wait a few minutes, then try once more (repeated tries make the wait longer).');
+      }
+      if (tokenRes.status === 403 && DISCORD_PROXY) {
+        return res.status(502).send('The Discord proxy rejected the request. Check that PROXY_KEY matches on Render and Cloudflare.');
       }
       if (tokenRes.status === 400 || tokenRes.status === 401) {
         return res.status(502).send('Discord rejected the login. Check DISCORD_CLIENT_SECRET and that the redirect URL in the Discord developer portal matches exactly.');
