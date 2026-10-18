@@ -230,6 +230,17 @@
     <div id="verifyBody"></div>
   </div>
 
+  <div class="card section" id="adminCard" hidden>
+    <h2>Admin panel <small>admins only</small></h2>
+    <div class="tabs" id="adminTabs">
+      <button data-at="overview" class="active">Overview</button>
+      <button data-at="links">Verified links</button>
+      <button data-at="commands">Server commands</button>
+      <button data-at="maint">Maintenance</button>
+    </div>
+    <div id="adminView"></div>
+  </div>
+
   <div class="card" id="staffCard">
     <h2>Staff panel</h2>
     <div id="staffLogin">
@@ -650,6 +661,8 @@ async function loadMe() {
   $('announceTab').hidden = !(me.announceEnabled);
   if (!me.authEnabled && !me.staffKeyEnabled) $('staffCard').hidden = true;
   if (me.user && me.authEnabled && !me.staff) $('staffMsg').textContent = 'You’re logged in, but your account doesn’t have a staff role.';
+  $('adminCard').hidden = !me.admin;
+  if (me.admin) loadAdmin();
   renderVerify();
   if (me.staff || staffKey) loadView();
 }
@@ -792,6 +805,137 @@ async function loadView() {
   const data = await r.json();
   if (feed === 'insights') renderInsights(data); else renderFeed(data);
 }
+
+// ---------- Admin panel ----------
+let adminTab = 'overview';
+async function adminFetch(url, opts = {}) {
+  const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+  return d;
+}
+const fmtUp = s => `${Math.floor(s / 86400) ? Math.floor(s / 86400) + 'd ' : ''}${Math.floor(s % 86400 / 3600)}h ${Math.floor(s % 3600 / 60)}m`;
+const msgBox = () => el('div', '', 'msg');
+const say = (box, text, ok) => { box.textContent = text; box.className = 'msg ' + (ok ? 'ok' : 'err'); };
+
+async function loadAdmin() {
+  if (!me.admin) return;
+  const v = $('adminView'); v.textContent = '';
+  try {
+    if (adminTab === 'overview') await adminOverview(v);
+    else if (adminTab === 'links') await adminLinks(v);
+    else if (adminTab === 'commands') adminCommands(v);
+    else adminMaint(v);
+  } catch (e) { v.append(el('div', e.message, 'msg err')); }
+}
+
+async function adminOverview(v) {
+  const d = await adminFetch('/api/admin/overview');
+  const dl = el('dl', undefined, 'kv');
+  const rows = [
+    ['ER:LC API', d.erlcOk ? 'Reachable' : 'Not responding'], ['Uptime', fmtUp(d.uptimeSec)],
+    ['Memory', d.memoryMb + ' MB'], ['Node', d.node],
+    ['Verified links', d.verifiedLinks], ['Pending verifications', d.pendingVerifications],
+    ['Events stored', d.events], ['Players tracked', d.activityTracked], ['Audit entries', d.auditEntries],
+    ['Webhook alerts', d.webhook ? 'On' : 'Off'], ['Discord proxy', d.proxy ? 'On' : 'Off'],
+    ['Panel commands', d.commands ? 'Enabled' : 'Off (ALLOW_ADMIN_COMMANDS)'],
+  ];
+  for (const [k, val] of rows) dl.append(el('dt', k), el('dd', String(val)));
+  const b = el('button', 'Send test webhook alert'), m = msgBox(); b.style.marginTop = '12px';
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await adminFetch('/api/admin/test-webhook', { method: 'POST', body: '{}' }); say(m, 'Sent. Check your alerts channel.', true); }
+    catch (e) { say(m, e.message); }
+    b.disabled = false;
+  };
+  v.append(dl, b, m);
+}
+
+async function adminLinks(v) {
+  const list = await adminFetch('/api/admin/links');
+  const search = el('input'); search.type = 'text'; search.placeholder = 'Search Roblox name or Discord ID…'; search.setAttribute('aria-label', 'Search links');
+  const wrap = el('div', undefined, 'table-wrap'), table = el('table', undefined, 'cards'), m = msgBox();
+  wrap.append(table);
+  const draw = () => {
+    const q = search.value.trim().toLowerCase(); table.textContent = '';
+    const rows = list.filter(l => `${l.robloxUsername} ${l.robloxId} ${l.discordId}`.toLowerCase().includes(q));
+    const head = document.createElement('tr'); for (const h of ['Roblox', 'Discord ID', 'Verified', '']) head.append(el('th', h));
+    const thead = document.createElement('thead'); thead.append(head); const tb = document.createElement('tbody');
+    for (const l of rows.slice(0, 200)) {
+      const tr = document.createElement('tr');
+      const act = cell('');
+      const del = el('button', 'Unlink');
+      del.onclick = async () => {
+        if (!confirm(`Unlink ${l.robloxUsername} and remove their verified role?`)) return;
+        del.disabled = true;
+        try { await adminFetch('/api/admin/links/' + l.discordId, { method: 'DELETE' }); list.splice(list.indexOf(l), 1); draw(); say(m, `Unlinked ${l.robloxUsername}.`, true); }
+        catch (e) { del.disabled = false; say(m, e.message); }
+      };
+      act.append(del);
+      tr.append(cell('Roblox', `${l.robloxUsername} (${l.robloxId})`), cell('Discord ID', l.discordId),
+                cell('Verified', l.verifiedAt ? new Date(l.verifiedAt).toLocaleDateString() : '–'), act);
+      tb.append(tr);
+    }
+    if (!rows.length) { const tr = document.createElement('tr'); const td = cell('', 'No links found.'); td.className = 'muted'; td.colSpan = 4; tr.append(td); tb.append(tr); }
+    table.append(thead, tb);
+  };
+  search.addEventListener('input', draw); draw();
+  v.append(el('div', `${list.length} verified link${list.length === 1 ? '' : 's'}`, 'muted'), search, wrap, m);
+}
+
+function adminCommands(v) {
+  if (!me.adminCommandsEnabled) { v.append(el('div', 'Panel commands are turned off. Set ALLOW_ADMIN_COMMANDS=true on the server.', 'muted')); return; }
+  const hints = {
+    m: 'Message to show everyone', h: 'Hint text', pm: 'PlayerName message to send them',
+    kick: 'Username or ID (comma-separate several)', ban: 'Username or ID (comma-separate several)',
+    unban: 'Username or ID', wanted: 'Username or ID', unwanted: 'Username or ID', refresh: 'No input needed',
+  };
+  const sel = el('select'); sel.setAttribute('aria-label', 'Command');
+  [['m', 'Server message (:m)'], ['h', 'Hint (:h)'], ['pm', 'Private message (:pm)'], ['kick', 'Kick (:kick)'], ['ban', 'Ban (:ban)'],
+   ['unban', 'Unban (:unban)'], ['wanted', 'Set wanted (:wanted)'], ['unwanted', 'Clear wanted (:unwanted)'], ['refresh', 'Refresh players (:refresh)']]
+    .forEach(([val, label]) => sel.append(new Option(label, val)));
+  const inp = el('input'); inp.type = 'text'; inp.maxLength = 200; inp.setAttribute('aria-label', 'Command arguments');
+  const go = el('button', 'Run', 'primary'), m = msgBox();
+  const sync = () => { inp.placeholder = hints[sel.value]; inp.disabled = sel.value === 'refresh'; };
+  sel.onchange = sync; sync();
+  go.onclick = async () => {
+    if (['kick', 'ban'].includes(sel.value) && !confirm(`Run :${sel.value} ${inp.value}?`)) return;
+    go.disabled = true;
+    try { await adminFetch('/api/admin/command', { method: 'POST', body: JSON.stringify({ command: sel.value, args: inp.value }) }); say(m, 'Command sent.', true); inp.value = ''; }
+    catch (e) { say(m, e.message); }
+    go.disabled = false;
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+  const row = el('div', undefined, 'row'); row.style.marginTop = '8px'; sel.style.flex = 'none'; row.append(sel, inp, go);
+  v.append(el('div', 'Commands run as the server owner and are recorded in the audit log.', 'muted'), row, m);
+}
+
+function adminMaint(v) {
+  const m = msgBox();
+  const items = [
+    ['peaks', 'Reset peaks and busy-hours heatmap', 'Resets today’s peak, the all-time peak, and the heatmap.'],
+    ['activity', 'Reset activity counters', 'Zeroes everyone’s in-game time and the public leaderboard.'],
+    ['events', 'Delete all events', 'Removes every event and its RSVPs.'],
+    ['audit', 'Clear audit log', 'Wipes the log (this action is logged first, then it’s cleared).'],
+  ];
+  for (const [what, label, desc] of items) {
+    const box = el('div', undefined, 'call'), b = el('button', label);
+    b.onclick = async () => {
+      if (!confirm(`${label}? ${desc} This can’t be undone.`)) return;
+      b.disabled = true;
+      try { await adminFetch('/api/admin/reset', { method: 'POST', body: JSON.stringify({ what }) }); say(m, 'Done.', true); loadLeaderboard(); loadHeat(); loadEvents(); }
+      catch (e) { say(m, e.message); }
+      b.disabled = false;
+    };
+    box.append(b, el('div', desc, 'muted')); v.append(box);
+  }
+  v.append(m);
+}
+
+document.querySelectorAll('[data-at]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('[data-at]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active'); adminTab = btn.dataset.at; loadAdmin();
+}));
 
 // ---------- Wiring ----------
 async function loadStats() {

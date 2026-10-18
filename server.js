@@ -7,9 +7,13 @@ const fs = require('fs');
 const {
   ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, ALLOW_ANNOUNCE,
   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_GUILD_ID, DISCORD_BOT_TOKEN, VERIFIED_ROLE_ID,
-  DISCORD_WEBHOOK_URL, QUEUE_ALERT, STAFF_ROLE_IDS = '', MEMBER_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
+  DISCORD_WEBHOOK_URL, QUEUE_ALERT, STAFF_ROLE_IDS = '', MEMBER_ROLE_IDS = '',
+  ADMIN_ROLE_IDS = '', ALLOW_ADMIN_COMMANDS, DB_PATH = '../verify.db', PORT = 3000,
 } = process.env;
 const STAFF_ROLES = STAFF_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
+// Admin role(s): full access to the admin panel (admins also count as staff and members).
+const ADMIN_ROLES = ADMIN_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
+const adminCommandsEnabled = String(ALLOW_ADMIN_COMMANDS).toLowerCase() === 'true';
 // Members role(s): people with one of these (or any staff role) can see the members page.
 // Leave MEMBER_ROLE_IDS empty and every person in your Discord server counts as a member.
 const MEMBER_ROLES = MEMBER_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
@@ -106,6 +110,7 @@ app.get('/healthz', (req, res) => res.json({
   melonlyTokenSet: Boolean(MELONLY_API_TOKEN),
   discordLoginSet: authEnabled,
   staffRolesSet: STAFF_ROLES.length > 0,
+  adminRolesSet: ADMIN_ROLES.length > 0,
   memberRolesSet: MEMBER_ROLES.length > 0,
   webVerifyEnabled: verifyEnabled,
   loginRequired,
@@ -399,11 +404,13 @@ app.get('/auth/callback', async (req, res) => {
       const m = await fetch(`${DISCORD_API}/users/@me/guilds/${DISCORD_GUILD_ID}/member`, { headers: auth });
       if (m.ok) roles = (await m.json()).roles || []; else inGuild = false;
     }
-    const staff = inGuild && roles.some(r => STAFF_ROLES.includes(r));
+    const admin = inGuild && roles.some(r => ADMIN_ROLES.includes(r));
+    // Admins always count as staff.
+    const staff = inGuild && (admin || roles.some(r => STAFF_ROLES.includes(r)));
     // Staff always count as members. With no MEMBER_ROLE_IDS set, everyone in the server is a member.
     const member = inGuild && (staff || !MEMBER_ROLES.length || roles.some(r => MEMBER_ROLES.includes(r)));
     const session = {
-      id: me.id, name: me.global_name || me.username, staff, member, inGuild,
+      id: me.id, name: me.global_name || me.username, staff, admin, member, inGuild,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=64` : null,
       exp: Date.now() + 12 * 3600_000,
     };
@@ -455,6 +462,8 @@ app.get('/api/me', (req, res) => {
     user: s ? { id: s.id, name: s.name, avatar: s.avatar } : null,
     inGuild: s ? s.inGuild : null,
     staff: Boolean(s && s.staff),
+    admin: Boolean(s && s.admin),
+    adminCommandsEnabled,
     member: Boolean(s && s.member),
     link: link ? { robloxUsername: link.robloxUsername, robloxId: link.robloxId } : null,
   });
@@ -736,6 +745,102 @@ app.get('/api/staff/:feed', requireStaff, async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: 'Could not reach the API (check the token and try again).' });
   }
+});
+
+// ---------- Admin panel (Discord role in ADMIN_ROLE_IDS only) ----------
+function requireAdmin(req, res, next) {
+  const s = getSession(req);
+  if (s && s.admin) { req.staffUser = s.name; return next(); }
+  return res.status(s ? 403 : 401).json({ error: 'Admin access required.' });
+}
+
+app.get('/api/admin/overview', requireAdmin, async (req, res) => {
+  let erlcOk = false;
+  try { await erlc([], 10_000); erlcOk = true; } catch {}
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    erlcOk,
+    uptimeSec: Math.floor(process.uptime()),
+    memoryMb: Math.round(process.memoryUsage().rss / 1048576),
+    node: process.version,
+    verifiedLinks: Object.keys(links).length,
+    pendingVerifications: pending.size,
+    events: events.length,
+    activityTracked: Object.keys(activity.players).length,
+    auditEntries: auditLog.length,
+    webhook: hookOk,
+    proxy: Boolean(DISCORD_PROXY),
+    commands: adminCommandsEnabled,
+  });
+});
+
+app.get('/api/admin/links', requireAdmin, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(Object.entries(links)
+    .map(([discordId, l]) => ({ discordId, robloxUsername: l.robloxUsername, robloxId: l.robloxId, verifiedAt: l.verifiedAt || 0 }))
+    .sort((a, b) => b.verifiedAt - a.verifiedAt));
+});
+
+app.delete('/api/admin/links/:id', requireAdmin, async (req, res) => {
+  const id = req.params.id;
+  if (!/^\d{5,25}$/.test(id) || !links[id]) return res.status(404).json({ error: 'Link not found.' });
+  const gone = links[id];
+  delete links[id]; saveLinks();
+  if (verifyEnabled) await botCall('DELETE', `/guilds/${DISCORD_GUILD_ID}/members/${id}/roles/${VERIFIED_ROLE_ID}`).catch(() => {});
+  audit(req.staffUser, 'Admin: link removed', `${gone.robloxUsername} (${id})`);
+  res.json({ ok: true });
+});
+
+// Allowlisted ER:LC commands only. Target-style commands accept usernames/IDs, comma-separated.
+const ADMIN_CMDS = new Set(['m', 'h', 'pm', 'kick', 'ban', 'unban', 'wanted', 'unwanted', 'refresh']);
+const TARGET_CMDS = new Set(['kick', 'ban', 'unban', 'wanted', 'unwanted']);
+let lastAdminCmdAt = 0;
+app.post('/api/admin/command', requireAdmin, async (req, res) => {
+  if (!adminCommandsEnabled) return res.status(403).json({ error: 'Panel commands are off (set ALLOW_ADMIN_COMMANDS=true).' });
+  const cmd = String(req.body.command || '').toLowerCase();
+  if (!ADMIN_CMDS.has(cmd)) return res.status(400).json({ error: 'That command isn’t allowed.' });
+  const args = String(req.body.args || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  if (cmd !== 'refresh' && !args) return res.status(400).json({ error: 'Add a player or message first.' });
+  if (TARGET_CMDS.has(cmd) && !/^[A-Za-z0-9_,]{3,100}$/.test(args)) return res.status(400).json({ error: 'Use a Roblox username or ID (comma-separate several).' });
+  if (Date.now() - lastAdminCmdAt < 2000) return res.status(429).json({ error: 'Slow down a moment.' });
+  lastAdminCmdAt = Date.now();
+  const full = `:${cmd}${args ? ' ' + args : ''}`;
+  try {
+    const r = await fetch(`${BASE}/server/command`, {
+      method: 'POST',
+      headers: { 'server-key': ERLC_SERVER_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: full }),
+    });
+    const body = await r.json().catch(() => ({}));
+    audit(req.staffUser, 'Admin command', full);
+    console.log(`[admin] ${req.staffUser}: ${full}`);
+    if (!r.ok) return res.status(502).json({ error: body.message || `ERLC returned ${r.status}.` });
+    res.json({ ok: true });
+  } catch {
+    res.status(502).json({ error: 'Could not reach the ERLC API.' });
+  }
+});
+
+app.post('/api/admin/reset', requireAdmin, (req, res) => {
+  const what = String(req.body.what || '');
+  if (what === 'peaks') {
+    meta.peakAll = 0; meta.peakAllAt = 0; meta.peakDay = { date: '', n: 0 }; meta.hourly = {};
+    saveJson('stats.json', meta);
+  } else if (what === 'activity') {
+    activity = { since: Date.now(), players: {} }; saveJson('activity.json', activity);
+  } else if (what === 'events') {
+    events = []; saveJson('events.json', events);
+  } else if (what === 'audit') {
+    auditLog.length = 0;
+  } else return res.status(400).json({ error: 'Unknown reset.' });
+  audit(req.staffUser, 'Admin: reset', what);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/test-webhook', requireAdmin, async (req, res) => {
+  if (!hookOk) return res.status(400).json({ error: 'No valid DISCORD_WEBHOOK_URL is set.' });
+  await notify({ title: 'Test alert', description: `Sent by **${req.staffUser}** from the admin panel.` });
+  res.json({ ok: true });
 });
 
 // Render provides PORT and requires listening on 0.0.0.0 (not just localhost)
