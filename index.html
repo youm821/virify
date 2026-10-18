@@ -512,7 +512,7 @@ async function loadHistory() {
     const x = t => pad + (t - t0) / Math.max(t1 - t0, 1) * (W - pad * 2);
     const y = v => H - pad - v / max * (H - pad * 2);
     const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.players).toFixed(1)}`).join(' ');
-    const ns = 'https://cdn.discordapp.com/icons/1543671305117769779/a35271e308db62579ae770aeaa33c116.webp?size=1024';
+    const ns = 'http://www.w3.org/2000/svg';
     const area = document.createElementNS(ns, 'polygon');
     area.setAttribute('points', `${x(t0)},${H - pad} ${line} ${x(t1)},${H - pad}`);
     area.setAttribute('fill', 'var(--accent-soft)');
@@ -907,6 +907,125 @@ setInterval(loadHistory, 60000);
 setInterval(loadMelonly, 60000);
 setInterval(loadEvents, 60000);
 setInterval(loadLeaderboard, 60000);
+</script>
+
+<!-- ===== Animations ===== -->
+<style>
+  :root { --ease: cubic-bezier(.22,1,.36,1); }
+
+  body, .card, .nav, input, select, textarea, button, th, .bar, .chip, .badge {
+    transition: background-color .35s ease, color .35s ease, border-color .35s ease;
+  }
+
+  #refreshBar { position: fixed; top: 0; left: 0; height: 2px; width: 0; z-index: 20; background: var(--accent); pointer-events: none; opacity: .8; }
+
+  .rv { opacity: 0; transform: translateY(18px) scale(.985); transition: opacity .7s var(--ease), transform .7s var(--ease); transition-delay: var(--d, 0ms); }
+  .rv.show { opacity: 1; transform: none; }
+
+  .stat { transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .3s, background-color .35s, color .35s; }
+  .stat:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 12px 28px -14px var(--accent); }
+  button { transition: transform .2s var(--ease), background-color .25s, border-color .25s, color .25s, box-shadow .25s; }
+  button:hover { border-color: var(--accent); }
+  button:active, a.btn:active { transform: scale(.96); }
+  a.btn { transition: transform .2s var(--ease), box-shadow .25s; }
+  a.btn:hover { box-shadow: 0 8px 18px -8px var(--accent); transform: translateY(-1px); }
+  button.primary:hover, button.active:hover { filter: brightness(1.08); }
+  tbody tr { transition: background-color .2s; }
+  tbody tr:hover { background: var(--accent-soft); }
+  .call { transition: background-color .2s, padding-left .25s var(--ease); }
+  .call:hover { background: var(--accent-soft); }
+  #themeBtn { transition: transform .6s var(--ease), border-color .25s; }
+
+  .nav a { transition: background-color .25s, color .25s; }
+  .nav a.on { background: var(--accent-soft); color: var(--accent); }
+
+  .dot:not(.off):not(.bad) { animation: pulse 2s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent); } 80%, 100% { box-shadow: 0 0 0 8px transparent; } }
+
+  .banner:not([hidden]) { animation: drop .45s var(--ease); }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+
+  body:not(.settled) .bar > span { transform-origin: left; animation: grow 1s var(--ease) both; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  body:not(.settled) #chart polyline { animation: fadeIn 1.2s ease both; }
+  body:not(.settled) #chart polygon { animation: fadeIn 1.6s ease .2s both; }
+  body:not(.settled) .heat .c { animation: cell .6s var(--ease) both; }
+  @keyframes fadeIn { from { opacity: 0; } }
+  @keyframes cell { from { transform: scale(.3); } }
+
+  #insightsView:not([hidden]), #feedView:not([hidden]), #eventsView:not([hidden]), #announceView:not([hidden]) { animation: viewIn .4s var(--ease); }
+  @keyframes viewIn { from { opacity: 0; transform: translateY(8px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+    .rv { opacity: 1; transform: none; }
+  }
+</style>
+
+<div id="refreshBar" aria-hidden="true"></div>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // 1) Scroll reveal, staggered within each row of cards
+  if (!reduce && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(entries => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const t = en.target; io.unobserve(t); t.classList.add('show');
+        setTimeout(() => t.classList.remove('rv', 'show'), 1000);
+      }
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.grid, .two, .wrap > .card').forEach(group => {
+      const items = group.classList.contains('card') ? [group] : [...group.children];
+      items.forEach((c, i) => { c.classList.add('rv'); c.style.setProperty('--d', Math.min(i, 7) * 60 + 'ms'); io.observe(c); });
+    });
+  }
+
+  // 2) Numbers count up/down smoothly
+  const ids = ['players', 'queue', 'staffCount', 'callCount', 'vehCount', 'peak', 'melonlyCount', 'verified'];
+  const last = new Map(), raf = new Map();
+  const mo = new MutationObserver(muts => {
+    for (const m of muts) {
+      const el = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+      const txt = el.textContent, num = txt.match(/^\d+/);
+      if (!num) continue;
+      const to = +num[0], rest = txt.slice(num[0].length), from = last.get(el) ?? 0;
+      if (from === to && !raf.has(el)) continue;
+      cancelAnimationFrame(raf.get(el)); last.set(el, to);
+      if (reduce) continue;
+      const t0 = performance.now(), dur = 700;
+      const step = now => {
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(from + (to - from) * e) + rest; mo.takeRecords();
+        if (p < 1) raf.set(el, requestAnimationFrame(step)); else raf.delete(el);
+      };
+      raf.set(el, requestAnimationFrame(step));
+    }
+  });
+  ids.forEach(id => { const el = document.getElementById(id); if (el) mo.observe(el, { childList: true, characterData: true, subtree: true }); });
+
+  // 3) Highlight the nav pill for the section in view
+  const links = [...document.querySelectorAll('.nav a')];
+  const so = new IntersectionObserver(entries => {
+    for (const en of entries) if (en.isIntersecting) links.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + en.target.id));
+  }, { rootMargin: '-35% 0px -60% 0px' });
+  links.forEach(a => { const t = document.querySelector(a.getAttribute('href')); if (t) so.observe(t); });
+
+  // 4) Theme button spins on click
+  let spin = 0; const tb = document.getElementById('themeBtn');
+  if (tb) tb.addEventListener('click', () => { spin += 180; tb.style.transform = `rotate(${spin}deg)`; });
+
+  // 5) Refresh countdown bar
+  const bar = document.getElementById('refreshBar');
+  (function frame() {
+    try { bar.style.width = Math.min(100, Math.max(0, 100 - (nextAt - Date.now()) / REFRESH_MS * 100)) + '%'; } catch {}
+    requestAnimationFrame(frame);
+  })();
+
+  setTimeout(() => document.body.classList.add('settled'), 4000);
+})();
 </script>
 </body>
 </html>
