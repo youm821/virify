@@ -61,7 +61,7 @@
   .muted { color: var(--muted); }
   .tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-  button.active, button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.active, button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
   .row { display: flex; gap: 8px; }
   .call { padding: 10px 0; border-bottom: 1px solid var(--line); }
   .call:last-child { border-bottom: 0; }
@@ -72,7 +72,7 @@
   .chart-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; flex-wrap: wrap; gap: 6px; }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; }
   .kv dt { color: var(--muted); } .kv dd { margin: 0; }
-  a.btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-size: 14px; }
+  a.btn { display: inline-block; padding: 7px 12px; border-radius: 8px; background: var(--accent); color: var(--on-accent, #fff); text-decoration: none; font-size: 14px; }
   a.link { color: var(--accent); text-decoration: none; font-size: 13px; }
   .user { display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--line); }
@@ -106,6 +106,21 @@
   .toolbar input { flex: 1 1 180px; width: auto; }
   .tabs.small { margin-bottom: 8px; }
   .tabs.small button { padding: 3px 10px; font-size: 13px; }
+
+  /* ---- Theme picker ---- */
+  .tpanel { position: fixed; top: 64px; right: 16px; z-index: 30; width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 90px);
+            overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+            box-shadow: 0 18px 40px -16px rgba(0,0,0,.45); }
+  .tpanel h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+  .tgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+  .topt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; text-align: left; font-size: 13px; }
+  .topt.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .tprev { width: 36px; height: 26px; border-radius: 6px; border: 1px solid rgba(128,128,128,.45); flex: none; position: relative; overflow: hidden; }
+  .tprev i { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 11px; border-radius: 3px; }
+  .tprev b { position: absolute; left: 4px; top: 3px; width: 15px; height: 5px; border-radius: 3px; }
+  .tfields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .tfield { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .tfield input[type=color] { width: 100%; height: 34px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: pointer; }
 
   /* ---- Live map ---- */
   .mapbox { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
@@ -142,6 +157,53 @@
     .two { grid-template-columns: 1fr; }
   }
 </style>
+<script>
+// ---------- Themes (applied early so the page doesn't flash the wrong colors) ----------
+const THEME_VARS = { bg: '--bg', card: '--card', text: '--text', muted: '--muted', line: '--line', accent: '--accent',
+  accentSoft: '--accent-soft', good: '--good', warn: '--warn', bad: '--bad', onAccent: '--on-accent' };
+const THEMES = {
+  light:    { name: 'Light',    dark: false, v: { bg: '#f4f5f7', card: '#ffffff', text: '#14161a', muted: '#5d6573', line: '#e1e4ea', accent: '#2563eb', accentSoft: 'rgba(37,99,235,.12)', good: '#16a34a', warn: '#d97706', bad: '#dc2626', onAccent: '#ffffff' } },
+  dark:     { name: 'Dark',     dark: true,  v: { bg: '#0e1116', card: '#171b22', text: '#e8eaee', muted: '#98a1b0', line: '#262c36', accent: '#5b8def', accentSoft: 'rgba(91,141,239,.18)', good: '#34d17a', warn: '#f0a23b', bad: '#f26b6b', onAccent: '#ffffff' } },
+  midnight: { name: 'Midnight', dark: true,  v: { bg: '#0b0d17', card: '#131629', text: '#e6e8f5', muted: '#8f95b8', line: '#232844', accent: '#7c83ff', accentSoft: 'rgba(124,131,255,.18)', good: '#34d17a', warn: '#f0a23b', bad: '#f26b6b', onAccent: '#ffffff' } },
+  ocean:    { name: 'Ocean',    dark: false, v: { bg: '#eef6f8', card: '#ffffff', text: '#0f2a33', muted: '#53727c', line: '#d5e6ea', accent: '#0e7490', accentSoft: 'rgba(14,116,144,.12)', good: '#16a34a', warn: '#d97706', bad: '#dc2626', onAccent: '#ffffff' } },
+  forest:   { name: 'Forest',   dark: true,  v: { bg: '#0d1511', card: '#15201a', text: '#e4efe8', muted: '#8fa899', line: '#24352b', accent: '#34b27b', accentSoft: 'rgba(52,178,123,.18)', good: '#34d17a', warn: '#f0a23b', bad: '#f26b6b', onAccent: '#04150b' } },
+  sunset:   { name: 'Sunset',   dark: true,  v: { bg: '#17100f', card: '#211716', text: '#f5e9e6', muted: '#b39a95', line: '#38262a', accent: '#f97316', accentSoft: 'rgba(249,115,22,.18)', good: '#34d17a', warn: '#f0a23b', bad: '#f26b6b', onAccent: '#1a0a02' } },
+  rose:     { name: 'Rose',     dark: false, v: { bg: '#fdf2f5', card: '#ffffff', text: '#2a1219', muted: '#7c5560', line: '#f3d5dd', accent: '#e11d48', accentSoft: 'rgba(225,29,72,.12)', good: '#16a34a', warn: '#d97706', bad: '#b91c1c', onAccent: '#ffffff' } },
+  contrast: { name: 'High contrast', dark: true, v: { bg: '#000000', card: '#0a0a0a', text: '#ffffff', muted: '#c4c4c4', line: '#555555', accent: '#ffd60a', accentSoft: 'rgba(255,214,10,.2)', good: '#4ade80', warn: '#fbbf24', bad: '#ff6b6b', onAccent: '#000000' } },
+};
+const THEME_DEFAULT_CUSTOM = { accent: '#8b5cf6', bg: '#12101a', card: '#1b1826', text: '#ece9f5' };
+const themeRgb = hex => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+function themeLum(hex) {
+  const [r, g, b] = themeRgb(hex).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function themeMix(a, b, t) { const x = themeRgb(a), y = themeRgb(b); return '#' + x.map((v, i) => Math.round(v * (1 - t) + y[i] * t).toString(16).padStart(2, '0')).join(''); }
+function themeRgba(hex, a) { const [r, g, b] = themeRgb(hex); return `rgba(${r},${g},${b},${a})`; }
+// Builds a full theme from the four colors a person picks.
+function themeDerive(c) {
+  const d = THEME_DEFAULT_CUSTOM, ok = k => (c && /^#[0-9a-f]{6}$/i.test(c[k])) ? c[k] : d[k];
+  const accent = ok('accent'), bg = ok('bg'), card = ok('card'), text = ok('text');
+  const dark = themeLum(bg) < 0.25;
+  return { name: 'Custom', dark, v: {
+    bg, card, text, accent,
+    muted: themeMix(text, bg, 0.4), line: themeMix(bg, text, 0.14), accentSoft: themeRgba(accent, dark ? 0.2 : 0.12),
+    good: dark ? '#34d17a' : '#16a34a', warn: dark ? '#f0a23b' : '#d97706', bad: dark ? '#f26b6b' : '#dc2626',
+    onAccent: themeLum(accent) > 0.45 ? '#111111' : '#ffffff',
+  } };
+}
+function themeApply(id, custom) {
+  const root = document.documentElement;
+  for (const css of Object.values(THEME_VARS)) root.style.removeProperty(css);
+  const t = id === 'custom' ? themeDerive(custom) : THEMES[id];
+  if (!t) { delete root.dataset.theme; root.style.colorScheme = ''; return; }   // "Auto": follow the device
+  root.dataset.theme = id;
+  for (const [k, css] of Object.entries(THEME_VARS)) root.style.setProperty(css, t.v[k]);
+  root.style.colorScheme = t.dark ? 'dark' : 'light';
+}
+let themeId = '', themeCustom = null;
+try { themeId = localStorage.getItem('theme') || ''; themeCustom = JSON.parse(localStorage.getItem('themeCustom') || 'null'); } catch {}
+themeApply(themeId, themeCustom);
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -153,7 +215,7 @@
     <div class="row" style="align-items:center;gap:16px;flex-wrap:wrap">
       <div class="live"><span class="dot off" id="dot"></span><span id="updated">Connecting…</span></div>
       <div id="userBox"></div>
-      <button id="themeBtn" aria-label="Switch light/dark theme" title="Switch light/dark theme">◐</button>
+      <button id="themeBtn" aria-label="Change theme" title="Change theme" aria-haspopup="dialog">◐</button>
     </div>
   </header>
 
@@ -321,6 +383,8 @@
     </div>
   </div>
 </div>
+
+<div class="tpanel" id="themePanel" role="dialog" aria-label="Choose a theme" hidden></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -1098,15 +1162,53 @@ document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('cl
   btn.classList.add('active'); feed = btn.dataset.feed; $('feedSearch').value = ''; $('feedNote').textContent = 'Loading…'; loadView();
 }));
 
-// theme toggle
-let theme = ''; try { theme = localStorage.getItem('theme') || ''; } catch {}
-const applyTheme = t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
-applyTheme(theme);
-$('themeBtn').addEventListener('click', () => {
-  const dark = theme ? theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  theme = dark ? 'light' : 'dark'; applyTheme(theme);
-  try { localStorage.setItem('theme', theme); } catch {}
+// ---------- Theme picker ----------
+const themePanel = $('themePanel');
+function themeSave() {
+  try { localStorage.setItem('theme', themeId); if (themeCustom) localStorage.setItem('themeCustom', JSON.stringify(themeCustom)); } catch {}
+}
+function themeMark() { themePanel.querySelectorAll('.topt').forEach(b => b.classList.toggle('on', b.dataset.id === themeId)); }
+function themeChoose(id) { themeId = id; themeApply(themeId, themeCustom); themeSave(); themeMark(); }
+function themeOption(id, label, t) {
+  const b = el('button', undefined, 'topt' + (themeId === id ? ' on' : '')); b.dataset.id = id;
+  const prev = el('span', undefined, 'tprev'), card = el('i'), acc = el('b');
+  prev.style.background = t.v.bg; card.style.background = t.v.card; acc.style.background = t.v.accent;
+  prev.append(card, acc); b.append(prev, document.createTextNode(label));
+  b.onclick = () => themeChoose(id);
+  return b;
+}
+function drawThemePanel() {
+  themePanel.textContent = '';
+  const grid = el('div', undefined, 'tgrid');
+  const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  grid.append(themeOption('', 'Auto (device)', sysDark ? THEMES.dark : THEMES.light));
+  for (const [id, t] of Object.entries(THEMES)) grid.append(themeOption(id, t.name, t));
+  grid.append(themeOption('custom', 'Custom', themeDerive(themeCustom)));
+  themePanel.append(el('h3', 'Theme'), grid, el('h3', 'Make your own'));
+
+  const fields = el('div', undefined, 'tfields');
+  const cur = { ...THEME_DEFAULT_CUSTOM, ...(themeCustom || {}) };
+  for (const [key, label] of [['accent', 'Accent'], ['bg', 'Background'], ['card', 'Cards'], ['text', 'Text']]) {
+    const wrap = el('label', undefined, 'tfield'), inp = el('input');
+    inp.type = 'color'; inp.value = /^#[0-9a-f]{6}$/i.test(cur[key]) ? cur[key] : THEME_DEFAULT_CUSTOM[key];
+    inp.addEventListener('input', () => {
+      themeCustom = { ...cur, ...(themeCustom || {}), [key]: inp.value };
+      themeId = 'custom'; themeApply(themeId, themeCustom); themeSave();
+      const old = themePanel.querySelector('.topt[data-id="custom"]');
+      if (old) old.replaceWith(themeOption('custom', 'Custom', themeDerive(themeCustom)));
+      themeMark();
+    });
+    wrap.append(el('span', label), inp); fields.append(wrap);
+  }
+  const reset = el('button', 'Reset to device default'); reset.onclick = () => themeChoose('');
+  themePanel.append(fields, reset);
+}
+$('themeBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  if (themePanel.hidden) { drawThemePanel(); themePanel.hidden = false; } else themePanel.hidden = true;
 });
+document.addEventListener('click', e => { if (!themePanel.hidden && !themePanel.contains(e.target)) themePanel.hidden = true; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') themePanel.hidden = true; });
 // sortable table headers
 document.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
   const grp = th.closest('table').querySelector('tbody').id === 'playerRows' ? 'players' : 'veh';
