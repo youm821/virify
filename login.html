@@ -4,31 +4,127 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Log in · ERLC Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235865f2'/%3E%3Cpath d='M32 14 16 22v10c0 10 7 17 16 20 9-3 16-10 16-20V22z' fill='none' stroke='%23fff' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
-  :root { --bg: #f4f5f7; --card: #ffffff; --text: #14161a; --muted: #5d6573; --line: #e1e4ea; --accent: #5865f2; --bad: #dc2626; }
+  :root {
+    --bg: #f4f5f7; --card: rgba(255,255,255,.82); --text: #14161a; --muted: #5d6573; --line: #e1e4ea;
+    --accent: #5865f2; --accent-2: #7983f5; --bad: #dc2626; --bad-bg: rgba(220,38,38,.08);
+    --glow: rgba(88,101,242,.22); --shadow: 0 20px 50px -20px rgba(20,22,26,.25);
+    --ease: cubic-bezier(.22,1,.36,1);
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0e1116; --card: #171b22; --text: #e8eaee; --muted: #98a1b0; --line: #262c36; --accent: #6d79f5; --bad: #f26b6b; }
+    :root {
+      --bg: #0e1116; --card: rgba(23,27,34,.8); --text: #e8eaee; --muted: #98a1b0; --line: #262c36;
+      --accent: #6d79f5; --accent-2: #8a94f8; --bad: #f26b6b; --bad-bg: rgba(242,107,107,.1);
+      --glow: rgba(109,121,245,.28); --shadow: 0 24px 60px -24px rgba(0,0,0,.7);
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--text);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; text-align: center; }
-  h1 { font-size: 22px; margin: 0 0 6px; }
-  p { color: var(--muted); margin: 0 0 20px; }
-  .btn { display: inline-block; padding: 11px 20px; border-radius: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
-  .err { color: var(--bad); margin-bottom: 16px; font-size: 14px; }
-  .small { margin-top: 18px; font-size: 13px; }
-  .small a { color: var(--muted); }
+  html, body { height: 100%; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--bg); color: var(--text); overflow: hidden;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Slow drifting glow behind the card */
+  .glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+  .glow i {
+    position: absolute; width: 46vmax; height: 46vmax; border-radius: 50%;
+    background: radial-gradient(circle, var(--glow), transparent 65%); filter: blur(30px);
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  .glow i:nth-child(1) { top: -18vmax; left: -12vmax; }
+  .glow i:nth-child(2) { bottom: -22vmax; right: -14vmax; animation-duration: 24s; animation-delay: -6s; }
+  @keyframes drift { to { transform: translate(8vmax, 6vmax) scale(1.15); } }
+
+  .card {
+    position: relative; z-index: 1; width: 100%; max-width: 420px; padding: 36px 28px 30px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 20px; text-align: center;
+    box-shadow: var(--shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    animation: rise .8s var(--ease) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(.97); } }
+
+  /* Shield mark: draws itself on load */
+  .mark {
+    width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 18px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 10px 24px -8px var(--accent);
+    animation: pop .7s var(--ease) .15s both;
+  }
+  .mark path { fill: none; stroke: #fff; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round;
+    stroke-dasharray: 80; stroke-dashoffset: 80; animation: draw 1s ease .5s forwards; }
+  @keyframes pop { from { opacity: 0; transform: scale(.6) rotate(-8deg); } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 6px; animation: fade .6s var(--ease) .3s both; }
+  p  { color: var(--muted); margin: 0 0 24px; animation: fade .6s var(--ease) .38s both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } }
+
+  .btn {
+    position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 13px 20px; border-radius: 12px; border: 0; color: #fff; text-decoration: none; font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 20px -8px var(--accent);
+    transition: transform .25s var(--ease), box-shadow .25s var(--ease), filter .25s;
+    animation: fade .6s var(--ease) .46s both;
+  }
+  .btn svg { width: 20px; height: 20px; fill: currentColor; flex: none; transition: transform .35s var(--ease); }
+  .btn::after { /* light sweep on hover */
+    content: ""; position: absolute; inset: 0; transform: translateX(-120%);
+    background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.28) 50%, transparent 70%);
+    transition: transform .7s var(--ease);
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 14px 28px -10px var(--accent); }
+  .btn:hover::after { transform: translateX(120%); }
+  .btn:hover svg { transform: rotate(-8deg) scale(1.1); }
+  .btn:active { transform: translateY(0) scale(.98); }
+  .btn:focus-visible, .small a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .btn.loading { pointer-events: none; filter: saturate(.7); }
+  .btn.loading svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .err {
+    margin: 0 0 18px; padding: 10px 14px; border-radius: 10px; font-size: 14px; color: var(--bad);
+    background: var(--bad-bg); border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent);
+    animation: shake .5s var(--ease) .5s both;
+  }
+  .err[hidden], .small[hidden] { display: none; }
+  @keyframes shake {
+    0% { opacity: 0; transform: translateX(0); } 20% { opacity: 1; transform: translateX(-6px); }
+    40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); }
+    100% { opacity: 1; transform: none; }
+  }
+
+  .small { margin-top: 20px; font-size: 13px; animation: fade .5s var(--ease) .6s both; }
+  .small a { color: var(--muted); text-decoration: none; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+    transition: background-size .3s var(--ease), color .2s; }
+  .small a:hover { color: var(--text); background-size: 100% 1px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+    .mark path { stroke-dashoffset: 0; }
+  }
 </style>
 </head>
 <body>
+  <div class="glow" aria-hidden="true"><i></i><i></i></div>
+
   <main class="card">
+    <div class="mark" aria-hidden="true">
+      <svg width="30" height="30" viewBox="0 0 24 24"><path d="M12 3 4.5 6.5v5c0 4.6 3.2 8 7.5 9.5 4.3-1.5 7.5-4.9 7.5-9.5v-5z"/></svg>
+    </div>
     <h1>Members only</h1>
     <p id="lead">Log in with Discord to view the dashboard.</p>
-    <div class="err" id="err" hidden></div>
-    <a class="btn" href="/auth/login">Log in with Discord</a>
+    <div class="err" id="err" role="alert" hidden></div>
+    <a class="btn" id="login" href="/auth/login">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.5a18.3 18.3 0 0 0-6.4 0L8.6 3a19.8 19.8 0 0 0-4.9 1.4C.6 9 -.2 13.5.2 18a19.9 19.9 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14.2 14.2 0 0 0 12 0l.5.4c-.6.4-1.300.7-2 1l1.300 2.100a19.900 19.900 0 0 0 6-3c.5-5.200-.8-9.700-3.500-13.600ZM8.500 15.300c-1.200 0-2.100-1.100-2.100-2.400s.9-2.400 2.100-2.400 2.100 1.100 2.100 2.400-.9 2.400-2.100 2.400Zm7 0c-1.200 0-2.100-1.100-2.100-2.400s.9-2.400 2.100-2.400 2.100 1.100 2.100 2.400-.9 2.400-2.100 2.400Z"/></svg>
+      <span>Log in with Discord</span>
+    </a>
     <div class="small" id="out" hidden><a href="/auth/logout">Log out of this Discord account</a></div>
   </main>
+
 <script>
   const e = new URLSearchParams(location.search).get('error');
   if (e === 'notmember') {
@@ -38,6 +134,11 @@
     box.hidden = false;
     document.getElementById('out').hidden = false;
   }
+  // Show a loading state while redirecting to Discord
+  document.getElementById('login').addEventListener('click', function () {
+    this.classList.add('loading');
+    this.querySelector('span').textContent = 'Redirecting…';
+  });
 </script>
 </body>
 </html>
