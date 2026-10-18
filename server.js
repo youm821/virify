@@ -7,9 +7,12 @@ const fs = require('fs');
 const {
   ERLC_SERVER_KEY, STAFF_KEY, MELONLY_API_TOKEN, SHOW_JOIN_CODE, ALLOW_ANNOUNCE,
   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_GUILD_ID, DISCORD_BOT_TOKEN, VERIFIED_ROLE_ID,
-  DISCORD_WEBHOOK_URL, QUEUE_ALERT, STAFF_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
+  DISCORD_WEBHOOK_URL, QUEUE_ALERT, STAFF_ROLE_IDS = '', MEMBER_ROLE_IDS = '', DB_PATH = '../verify.db', PORT = 3000,
 } = process.env;
 const STAFF_ROLES = STAFF_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
+// Members role(s): people with one of these (or any staff role) can see the members page.
+// Leave MEMBER_ROLE_IDS empty and every person in your Discord server counts as a member.
+const MEMBER_ROLES = MEMBER_ROLE_IDS.split(',').map(x => x.trim()).filter(Boolean);
 // Render sets RENDER_EXTERNAL_URL automatically; set BASE_URL yourself for a custom domain.
 const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -103,13 +106,14 @@ app.get('/healthz', (req, res) => res.json({
   melonlyTokenSet: Boolean(MELONLY_API_TOKEN),
   discordLoginSet: authEnabled,
   staffRolesSet: STAFF_ROLES.length > 0,
+  memberRolesSet: MEMBER_ROLES.length > 0,
   webVerifyEnabled: verifyEnabled,
   loginRequired,
   webhookAlerts: /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(DISCORD_WEBHOOK_URL || ''),
   discordProxyOn: Boolean(process.env.DISCORD_PROXY_URL),
   baseUrl: BASE_URL,
 }));
-// ---------- Require Discord login to view anything ----------
+// ---------- Require Discord login (and the Members role) to view anything ----------
 // On by default once Discord login is configured. Set REQUIRE_LOGIN=false to make the site public again.
 const loginRequired = authEnabled && String(process.env.REQUIRE_LOGIN ?? 'true').toLowerCase() !== 'false';
 app.use((req, res, next) => {
@@ -117,9 +121,9 @@ app.use((req, res, next) => {
   const p = req.path;
   if (p === '/healthz' || p === '/login' || p === '/api/me' || p.startsWith('/auth/')) return next();
   const s = getSession(req);
-  if (s && s.inGuild) return next();
+  if (s && s.member) return next();
   if (p.startsWith('/api/')) return res.status(401).json({ error: 'Log in with Discord first.', login: true });
-  return res.redirect(s ? '/login?error=notmember' : '/login');
+  return res.redirect(!s ? '/login' : s.inGuild ? '/login?error=norole' : '/login?error=notmember');
 });
 
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
@@ -128,10 +132,21 @@ const pageDir = PAGE_DIRS.find(d => fs.existsSync(path.join(d, 'index.html')));
 // Friendly login page (also where signed-out visitors land)
 app.get('/login', (req, res) => {
   const s = getSession(req);
-  if (s && s.inGuild) return res.redirect('/');
+  if (s && s.member) return res.redirect('/');
   const file = pageDir && path.join(pageDir, 'login.html');
   if (file && fs.existsSync(file)) return res.sendFile(file);
   res.status(404).send('login.html is missing. Upload dashboard/public/login.html to your repo and redeploy.');
+});
+// Staff get the full dashboard (index.html); everyone else with the Members role gets members.html.
+app.get(['/', '/index.html'], (req, res, next) => {
+  if (!pageDir) return next();
+  const s = getSession(req);
+  res.set('Cache-Control', 'no-store');
+  if (!loginRequired || (s && s.staff)) return res.sendFile(path.join(pageDir, 'index.html'));
+  const mp = path.join(pageDir, 'members.html');
+  if (fs.existsSync(mp)) return res.sendFile(mp);
+  // Never fall back to the staff page for members
+  res.status(500).send('members.html is missing. Upload it to the public folder (lowercase, with an s) and redeploy.');
 });
 if (pageDir) {
   app.use(express.static(pageDir, { index: 'index.html', dotfiles: 'ignore' }));
@@ -385,8 +400,10 @@ app.get('/auth/callback', async (req, res) => {
       if (m.ok) roles = (await m.json()).roles || []; else inGuild = false;
     }
     const staff = inGuild && roles.some(r => STAFF_ROLES.includes(r));
+    // Staff always count as members. With no MEMBER_ROLE_IDS set, everyone in the server is a member.
+    const member = inGuild && (staff || !MEMBER_ROLES.length || roles.some(r => MEMBER_ROLES.includes(r)));
     const session = {
-      id: me.id, name: me.global_name || me.username, staff, inGuild,
+      id: me.id, name: me.global_name || me.username, staff, member, inGuild,
       avatar: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png?size=64` : null,
       exp: Date.now() + 12 * 3600_000,
     };
@@ -438,6 +455,7 @@ app.get('/api/me', (req, res) => {
     user: s ? { id: s.id, name: s.name, avatar: s.avatar } : null,
     inGuild: s ? s.inGuild : null,
     staff: Boolean(s && s.staff),
+    member: Boolean(s && s.member),
     link: link ? { robloxUsername: link.robloxUsername, robloxId: link.robloxId } : null,
   });
 });

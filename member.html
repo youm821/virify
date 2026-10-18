@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TXRP Members Hub</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --text:#14161a; --muted:#5d6573; --line:#e1e4ea; --accent:#2563eb; --accent-soft:rgba(37,99,235,.12); --good:#16a34a; --warn:#d97706; --bad:#dc2626; --ease:cubic-bezier(.22,1,.36,1); }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --card:#171b22; --text:#e8eaee; --muted:#98a1b0; --line:#262c36; --accent:#5b8def; --accent-soft:rgba(91,141,239,.18); --good:#34d17a; --warn:#f0a23b; --bad:#f26b6b; } }
+  :root[data-theme="dark"] { --bg:#0e1116; --card:#171b22; --text:#e8eaee; --muted:#98a1b0; --line:#262c36; --accent:#5b8def; --accent-soft:rgba(91,141,239,.18); --good:#34d17a; --warn:#f0a23b; --bad:#f26b6b; }
+  :root[data-theme="light"] { --bg:#f4f5f7; --card:#fff; --text:#14161a; --muted:#5d6573; --line:#e1e4ea; --accent:#2563eb; --accent-soft:rgba(37,99,235,.12); --good:#16a34a; --warn:#d97706; --bad:#dc2626; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; } [id] { scroll-margin-top: 60px; } [hidden] { display: none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  body, .card, .nav, input, select, button, th, .chip, .badge { transition: background-color .35s ease, color .35s ease, border-color .35s ease; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 16px 56px; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+  .brand { display:flex; align-items:center; gap:12px; min-width:0; }
+  .logo { width:42px; height:42px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:grid; place-items:center; font-weight:700; font-size:18px; overflow:hidden; flex:none; border:1px solid var(--line); }
+  .logo img { width:100%; height:100%; object-fit:cover; display:block; }
+  h1 { font-size:22px; margin:0; overflow-wrap:anywhere; }
+  .live { color:var(--muted); font-size:13px; display:flex; align-items:center; gap:6px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--good); flex:none; } .dot.off { background:var(--warn); } .dot.bad { background:var(--bad); }
+  .banner { padding:10px 14px; border-radius:10px; margin-bottom:16px; font-size:14px; border:1px solid; }
+  .banner.warn { background:rgba(217,119,6,.14); color:var(--warn); border-color:var(--warn); }
+  .banner.bad { background:rgba(220,38,38,.14); color:var(--bad); border-color:var(--bad); }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; min-width:0; }
+  .stat .label { color:var(--muted); font-size:13px; } .stat .value { font-size:28px; font-weight:650; margin-top:2px; }
+  h2 { font-size:15px; margin:0 0 12px; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  h2 small { color:var(--muted); font-weight:400; font-size:12px; }
+  .two { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); margin-bottom:16px; }
+  .section { margin-bottom:16px; }
+  .bar-row { margin-bottom:10px; } .bar-top { display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; } .bar > span { display:block; height:100%; background:var(--accent); }
+  .chip { display:inline-block; padding:2px 8px; margin:0 6px 6px 0; border:1px solid var(--line); border-radius:999px; font-size:13px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; background:var(--accent-soft); color:var(--accent); }
+  .badge.bad { background:rgba(220,38,38,.14); color:var(--bad); }
+  input[type=text], input[type=number], select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  input[type=text] { width:100%; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; } .filters input { flex:1 1 200px; width:auto; }
+  .table-wrap { overflow:auto; max-height:360px; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:500; position:sticky; top:0; background:var(--card); }
+  th[data-sort] { cursor:pointer; user-select:none; } th.asc::after { content:" ▲"; font-size:10px; } th.desc::after { content:" ▼"; font-size:10px; }
+  .muted { color:var(--muted); }
+  .tabs { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; } .tabs button { padding:3px 10px; font-size:13px; }
+  button { padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; cursor:pointer; }
+  button.active, button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .row { display:flex; gap:8px; }
+  .call { padding:10px 0; border-bottom:1px solid var(--line); } .call:last-child { border-bottom:0; }
+  .call .top { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .call.police { border-left:3px solid #3b82f6; padding-left:10px; } .call.fire { border-left:3px solid #ef4444; padding-left:10px; } .call.ems { border-left:3px solid #22c55e; padding-left:10px; }
+  .call.alert .warnline { color:var(--bad); font-weight:600; font-size:13px; }
+  .swatch { display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid var(--line); vertical-align:-1px; margin-right:6px; }
+  .chart-box svg { width:100%; height:150px; display:block; }
+  .chart-meta { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; margin-top:4px; flex-wrap:wrap; gap:6px; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:14px; } .kv dt { color:var(--muted); } .kv dd { margin:0; }
+  a.btn { display:inline-block; padding:7px 12px; border-radius:8px; background:var(--accent); color:#fff; text-decoration:none; font-size:14px; }
+  a.link { color:var(--accent); text-decoration:none; font-size:13px; }
+  .user { display:flex; align-items:center; gap:8px; font-size:14px; } .avatar { width:26px; height:26px; border-radius:50%; background:var(--line); }
+  .code { font:600 20px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; padding:10px 12px; border:1px dashed var(--accent); border-radius:8px; display:inline-block; margin:8px 0; user-select:all; }
+  .msg { margin-top:8px; font-size:14px; } .msg.err { color:var(--bad); } .msg.ok { color:var(--good); }
+  .heat { display:grid; grid-template-columns:34px repeat(24,minmax(10px,1fr)); gap:2px; min-width:420px; }
+  .heat .c { aspect-ratio:1; min-height:10px; background:var(--accent); border-radius:3px; } .heat .hl, .heat .dl { font-size:10px; color:var(--muted); line-height:1.6; }
+  .nav { position:sticky; top:0; z-index:5; display:flex; gap:6px; overflow-x:auto; margin:0 -16px 16px; padding:8px 16px; background:var(--bg); border-bottom:1px solid var(--line); }
+  .nav a { color:var(--muted); text-decoration:none; font-size:14px; padding:4px 10px; border-radius:999px; white-space:nowrap; transition:background-color .25s,color .25s; }
+  .nav a:hover, .nav a.on { background:var(--accent-soft); color:var(--accent); }
+
+  /* skeletons */
+  @keyframes shimmer { to { background-position:-200% 0; } }
+  .skel, .sk { background:linear-gradient(90deg,var(--line) 25%,var(--accent-soft) 50%,var(--line) 75%); background-size:200% 100%; animation:shimmer 1.3s linear infinite; border-radius:6px; }
+  .skel { height:14px; margin:9px 0; } .skel.short { width:60%; } .stat .value.sk { color:transparent; width:72px; height:34px; }
+
+  /* animations */
+  #refreshBar { position:fixed; top:0; left:0; height:2px; width:0; z-index:20; background:var(--accent); pointer-events:none; opacity:.8; }
+  .rv { opacity:0; transform:translateY(18px) scale(.985); transition:opacity .7s var(--ease),transform .7s var(--ease); transition-delay:var(--d,0ms); } .rv.show { opacity:1; transform:none; }
+  .stat { transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s,background-color .35s; }
+  .stat:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 12px 28px -14px var(--accent); }
+  button { transition:transform .2s var(--ease),background-color .25s,border-color .25s,color .25s; } button:hover { border-color:var(--accent); } button:active, a.btn:active { transform:scale(.96); }
+  tbody tr { transition:background-color .2s; } tbody tr:hover, .call:hover { background:var(--accent-soft); }
+  #themeBtn { transition:transform .6s var(--ease),border-color .25s; }
+  .dot:not(.off):not(.bad) { animation:pulse 2s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 55%,transparent); } 80%,100% { box-shadow:0 0 0 8px transparent; } }
+  .banner:not([hidden]) { animation:drop .45s var(--ease); } @keyframes drop { from { opacity:0; transform:translateY(-8px); } }
+  body:not(.settled) .bar > span { transform-origin:left; animation:grow 1s var(--ease) both; } @keyframes grow { from { transform:scaleX(0); } }
+  body:not(.settled) #chart polyline { animation:fadeIn 1.2s ease both; } body:not(.settled) #chart polygon { animation:fadeIn 1.6s ease .2s both; }
+  body:not(.settled) .heat .c { animation:cell .6s var(--ease) both; } @keyframes fadeIn { from { opacity:0; } } @keyframes cell { from { transform:scale(.3); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-delay:0s !important; transition-duration:.01ms !important; } .rv { opacity:1; transform:none; } }
+
+  @media (max-width:640px) {
+    .wrap { padding:16px 12px 48px; } .table-wrap { overflow-x:visible; max-height:480px; } .two { grid-template-columns:1fr; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display:block; width:100%; } table.cards thead { display:none; }
+    table.cards tr { border:1px solid var(--line); border-radius:10px; padding:6px 12px; margin-bottom:8px; background:var(--bg); }
+    table.cards td { display:flex; justify-content:space-between; gap:14px; border:0; padding:4px 0; white-space:normal; text-align:right; overflow-wrap:anywhere; }
+    table.cards td::before { content:attr(data-label); color:var(--muted); text-align:left; flex:none; } table.cards td[data-label=""]::before { display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="refreshBar" aria-hidden="true"></div>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo"><img id="logoImg" alt="" hidden><span id="logoLetter">E</span></div>
+      <h1 id="title">ERLC Members Hub</h1>
+    </div>
+    <div class="row" style="align-items:center;gap:16px;flex-wrap:wrap">
+      <div class="live"><span class="dot off" id="dot"></span><span id="updated">Connecting…</span></div>
+      <div id="userBox"></div>
+      <button id="themeBtn" aria-label="Switch light/dark theme" title="Switch light/dark theme">◐</button>
+    </div>
+  </header>
+
+  <nav class="nav" aria-label="Sections">
+    <a href="#overview">Overview</a><a href="#callsSec">911 calls</a><a href="#eventsSec">Events</a><a href="#heatCard">Busy hours</a><a href="#playersSec">Players</a><a href="#vehSec">Vehicles</a><a href="#verifyCard">Verify</a>
+  </nav>
+  <div class="banner" id="banner" role="alert" hidden></div>
+
+  <div class="grid" id="overview">
+    <div class="card stat"><div class="label">Players online</div><div class="value sk" id="players">&nbsp;</div></div>
+    <div class="card stat"><div class="label">In queue</div><div class="value sk" id="queue">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Staff in-game</div><div class="value sk" id="staffCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Active 911 calls</div><div class="value sk" id="callCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Vehicles spawned</div><div class="value sk" id="vehCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Peak today</div><div class="value sk" id="peak">&nbsp;</div><div class="muted" id="peakAll" style="font-size:12px"></div></div>
+  </div>
+
+  <div class="card section">
+    <h2>Players over time <small id="chartRange"></small></h2>
+    <div class="chart-box"><div class="skel" id="chartSkel" style="height:150px;margin:0"></div><svg id="chart" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Player count over time"></svg></div>
+    <div class="chart-meta"><span id="chartLeft"></span><span id="chartRight"></span></div>
+  </div>
+
+  <div class="two">
+    <div class="card"><h2>Players by team</h2><div id="teams" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Staff on duty</h2><div id="staff" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
+  </div>
+
+  <div class="two" id="callsSec">
+    <div class="card"><h2>Active emergency calls <small id="callsNote"></small></h2><div id="calls" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Server info</h2><dl class="kv" id="info"><div class="skel" style="grid-column:1/-1"></div><div class="skel short" style="grid-column:1/-1"></div></dl></div>
+  </div>
+
+  <div class="two">
+    <div class="card"><h2>Most wanted <small>3+ stars</small></h2><div id="wanted" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Player alert</h2>
+      <div class="muted" style="margin-bottom:8px">Get a browser notification when the server reaches this many players (while this tab is open).</div>
+      <div class="row"><input type="number" id="alertNum" min="0" max="100" placeholder="e.g. 20" aria-label="Alert at player count" style="width:110px"><button class="primary" id="alertGo">Save</button></div>
+      <div class="msg muted" id="alertMsg"></div>
+    </div>
+  </div>
+
+  <div class="two" id="eventsSec">
+    <div class="card"><h2>Upcoming events</h2><div id="events" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Most active players <small id="lbNote"></small></h2>
+      <div class="tabs" id="lbTabs"><button data-range="week">This week</button><button data-range="month">This month</button><button data-range="all" class="active">All time</button></div>
+      <div id="leaderboard" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+  </div>
+
+  <div class="card section" id="heatCard">
+    <h2>Busy hours <small id="heatNote"></small></h2>
+    <div style="overflow-x:auto"><div class="heat" id="heat"></div></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Average players by hour, in your local time. Darker means busier.</div>
+  </div>
+
+  <div class="card section" id="playersSec">
+    <h2>Online players <small id="playerNote"></small></h2>
+    <div class="filters"><input type="text" id="search" placeholder="Search players, callsigns, streets…" aria-label="Search players"><select id="teamFilter" aria-label="Filter by team"><option value="">All teams</option></select></div>
+    <div class="table-wrap"><table class="cards"><thead><tr><th data-sort="name">Player</th><th data-sort="team">Team</th><th data-sort="callsign">Callsign</th><th data-sort="street">Location</th><th data-sort="wanted">Wanted</th><th data-sort="permission">Role</th></tr></thead>
+      <tbody id="playerRows"><tr><td colspan="6"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></td></tr></tbody></table></div>
+  </div>
+
+  <div class="card section" id="vehSec">
+    <h2>Spawned vehicles <small id="vehNote"></small></h2>
+    <input type="text" id="vehSearch" placeholder="Search by vehicle, owner, or plate…" aria-label="Search vehicles">
+    <div class="table-wrap"><table class="cards"><thead><tr><th data-sort="name">Vehicle</th><th data-sort="owner">Owner</th><th data-sort="plate">Plate</th><th data-sort="texture">Livery</th><th data-sort="colorName">Colour</th></tr></thead>
+      <tbody id="vehRows"><tr><td colspan="5"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></td></tr></tbody></table></div>
+  </div>
+
+  <div class="card section" id="verifyCard" hidden>
+    <h2>Verify your Roblox account <small id="verifyState"></small></h2>
+    <div id="verifyBody"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null, peak = 0;
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+const cell = (label, val) => { const td = el('td', val); td.dataset.label = label; return td; };
+const ago = ts => { const s = Math.max(0, Math.floor(Date.now() / 1000 - ts)); if (s < 60) return `${s}s ago`; if (s < 3600) return `${Math.floor(s / 60)}m ago`; return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`; };
+const agoMs = ms => ago(ms / 1000);
+const hm = mins => mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+
+// ---------- Connection status ----------
+const REFRESH_MS = 10000;
+let lastOk = 0, nextAt = Date.now() + REFRESH_MS, status = 'connecting';
+function setStatus(s) { status = s; tick(); }
+function tick() {
+  const now = Date.now(), dot = $('dot'), banner = $('banner'), upd = $('updated'), age = lastOk ? agoMs(lastOk) : null;
+  if (status === 'ok') { banner.hidden = true; dot.className = 'dot'; }
+  else if (status === 'erlc') { dot.className = 'dot bad'; banner.className = 'banner bad'; banner.hidden = false; banner.textContent = 'The ER:LC API isn’t responding right now. ' + (age ? `Showing the last data we got (${age}).` : 'No data yet.'); }
+  else if (status === 'net') { dot.className = 'dot off'; banner.className = 'banner warn'; banner.hidden = false; banner.textContent = 'Can’t reach the dashboard server. Retrying automatically…' + (age ? ` Last data ${age}.` : ''); }
+  else dot.className = 'dot off';
+  if (!lastOk) { upd.textContent = status === 'connecting' ? 'Connecting…' : 'No data yet'; return; }
+  upd.textContent = `Updated ${Math.max(0, Math.floor((now - lastOk) / 1000))}s ago · refreshing in ${Math.max(0, Math.ceil((nextAt - now) / 1000))}s`;
+}
+setInterval(tick, 1000);
+
+// ---------- Main stats ----------
+function render(d) {
+  data = d;
+  document.querySelectorAll('.sk').forEach(e => e.classList.remove('sk'));
+  const name = d.name || 'ERLC Members Hub';
+  $('title').textContent = name; document.title = name;
+  $('logoLetter').textContent = (name.trim()[0] || 'E').toUpperCase();
+  if (d.logo && $('logoImg').getAttribute('src') !== d.logo) $('logoImg').src = d.logo;
+  $('players').textContent = d.max ? `${d.current} / ${d.max}` : d.current;
+  $('queue').textContent = d.queue; $('staffCount').textContent = d.staff.length; $('callCount').textContent = d.calls.length; $('vehCount').textContent = d.vehicleCount;
+  if (d.peaks) { $('peak').textContent = d.peaks.today; $('peakAll').textContent = `All-time: ${d.peaks.allTime}`; }
+  else { peak = Math.max(peak, d.current); $('peak').textContent = peak; }
+
+  const teamsEl = $('teams'); teamsEl.textContent = '';
+  const entries = Object.entries(d.teams).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) teamsEl.textContent = 'Nobody is online right now.';
+  const total = Math.max(d.current, 1);
+  for (const [team, n] of entries) {
+    const row = el('div', undefined, 'bar-row'), top = el('div', undefined, 'bar-top'); top.append(el('span', team), el('span', n));
+    const bar = el('div', undefined, 'bar'), fill = el('span'); fill.style.width = `${Math.round(n / total * 100)}%`; bar.append(fill); row.append(top, bar); teamsEl.append(row);
+  }
+  const sel = $('teamFilter'), keep = sel.value; sel.textContent = ''; sel.append(new Option('All teams', ''));
+  for (const [team] of entries) sel.append(new Option(team, team));
+  sel.value = entries.some(([t]) => t === keep) ? keep : '';
+
+  const staffEl = $('staff'); staffEl.textContent = '';
+  if (!d.staff.length) staffEl.textContent = 'No staff in-game.';
+  for (const s of d.staff) staffEl.append(el('span', `${s.name} · ${s.permission}`, 'chip'));
+
+  const callsEl = $('calls'); callsEl.textContent = '';
+  $('callsNote').textContent = d.calls.length ? `${d.calls.length} active` : '';
+  if (!d.calls.length) callsEl.textContent = 'No active emergency calls.';
+  for (const c of d.calls.slice(0, 12)) {
+    const tcls = String(c.team || '').toLowerCase().replace(/[^a-z]/g, '');
+    const waited = c.startedAt ? Math.floor(Date.now() / 1000 - c.startedAt) : 0, noOne = !c.responders && waited > 180;
+    const box = el('div', undefined, 'call ' + tcls + (noOne ? ' alert' : '')), top = el('div', undefined, 'top');
+    top.append(el('strong', `#${c.number} · ${c.team || 'Unknown'}`), el('span', c.startedAt ? ago(c.startedAt) : '', 'muted')); box.append(top);
+    if (c.description) box.append(el('div', c.description));
+    box.append(el('div', [c.where, c.responders ? `${c.responders} responding` : 'No responders'].filter(Boolean).join(' · '), 'muted'));
+    if (noOne) box.append(el('div', `Waiting ${Math.floor(waited / 60)} min with no responders`, 'warnline'));
+    callsEl.append(box);
+  }
+
+  const info = $('info'); info.textContent = '';
+  const rows = [['Players', d.max ? `${d.current} of ${d.max}` : String(d.current)]];
+  if (d.teamBalance !== null) rows.push(['Team balance', d.teamBalance ? 'On' : 'Off']);
+  if (d.accVerifiedReq) rows.push(['Account verification', d.accVerifiedReq]);
+  if (d.joinKey) rows.push(['Join code', d.joinKey]);
+  for (const [k, v] of rows) {
+    const dd = el('dd', v);
+    if (k === 'Join code') {
+      const b = el('button', 'Copy'); b.style.cssText = 'margin-left:8px;padding:2px 8px;font-size:12px';
+      b.onclick = async () => { try { await navigator.clipboard.writeText(v); b.textContent = 'Copied!'; setTimeout(() => { b.textContent = 'Copy'; }, 1500); } catch { b.textContent = 'Select + copy'; } };
+      dd.append(b);
+    }
+    info.append(el('dt', k), dd);
+  }
+  renderPlayers(); renderVehicles(); renderWanted(); checkAlert(d);
+}
+
+function renderWanted() {
+  const box = $('wanted'); box.textContent = '';
+  const list = data.players.filter(p => p.wanted >= 3).sort((a, b) => b.wanted - a.wanted).slice(0, 8);
+  if (!list.length) { box.textContent = 'Nobody with 3+ stars right now.'; return; }
+  for (const p of list) {
+    const r = el('div', undefined, 'call'), top = el('div', undefined, 'top');
+    top.append(el('strong', p.name), el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad'));
+    r.append(top, el('div', [p.team, p.street].filter(Boolean).join(' · ') || '–', 'muted')); box.append(r);
+  }
+}
+
+// ---------- Player-count alert ----------
+let alertAt = 0, alerted = true;
+try { alertAt = Number(localStorage.getItem('alertAt')) || 0; } catch {}
+function checkAlert(d) {
+  if (!alertAt) return;
+  if (d.current >= alertAt && !alerted) { alerted = true; if ('Notification' in window && Notification.permission === 'granted') new Notification(`${d.name || 'Server'}: ${d.current} players online`, { body: `Reached your alert level of ${alertAt}.` }); }
+  if (d.current < alertAt) alerted = false;
+}
+function showAlertMsg(extra) { $('alertMsg').textContent = extra || (alertAt ? `Alert is on at ${alertAt}+ players.` : 'Alert is off.'); }
+
+// ---------- Tables ----------
+const sortState = { players: { key: '', dir: 1 }, veh: { key: '', dir: 1 } };
+function sortRows(rows, s) {
+  if (!s.key) return;
+  rows.sort((a, b) => { const x = a[s.key], y = b[s.key]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), undefined, { numeric: true })) * s.dir; });
+}
+function renderPlayers() {
+  if (!data) return;
+  const q = $('search').value.trim().toLowerCase(), team = $('teamFilter').value, body = $('playerRows'); body.textContent = '';
+  const rows = data.players.filter(p => (!team || p.team === team) && [p.name, p.callsign, p.street, p.postal, p.team].join(' ').toLowerCase().includes(q));
+  sortRows(rows, sortState.players); $('playerNote').textContent = `${rows.length} shown`;
+  for (const p of rows) {
+    const tr = document.createElement('tr'), loc = [p.street, p.postal ? `(Postal ${p.postal})` : ''].filter(Boolean).join(' ');
+    tr.append(cell('Player', p.name), cell('Team', p.team), cell('Callsign', p.callsign || '–'), cell('Location', loc || '–'));
+    const w = cell('Wanted'); if (p.wanted > 0) w.append(el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad')); else w.textContent = '–';
+    tr.append(w, cell('Role', p.permission)); body.append(tr);
+  }
+  if (!rows.length) { const tr = document.createElement('tr'), td = cell('', 'No players match.'); td.className = 'muted'; td.colSpan = 6; tr.append(td); body.append(tr); }
+}
+function renderVehicles() {
+  if (!data) return;
+  const q = $('vehSearch').value.trim().toLowerCase(), body = $('vehRows'); body.textContent = '';
+  const rows = data.vehicles.filter(v => [v.name, v.owner, v.plate, v.texture].join(' ').toLowerCase().includes(q));
+  sortRows(rows, sortState.veh);
+  $('vehNote').textContent = data.vehicleCount > data.vehicles.length ? `showing ${data.vehicles.length} of ${data.vehicleCount}` : `${rows.length} shown`;
+  for (const v of rows) {
+    const tr = document.createElement('tr');
+    tr.append(cell('Vehicle', v.name), cell('Owner', v.owner), cell('Plate', v.plate), cell('Livery', v.texture || '–'));
+    const c = cell('Colour'), sw = el('span', undefined, 'swatch'); if (/^#[0-9a-f]{3,8}$/i.test(v.colorHex)) sw.style.background = v.colorHex;
+    const lab = el('span'); lab.append(sw, document.createTextNode(v.colorName || '–')); c.append(lab); tr.append(c); body.append(tr);
+  }
+  if (!rows.length) { const tr = document.createElement('tr'), td = cell('', 'No vehicles to show.'); td.className = 'muted'; td.colSpan = 5; tr.append(td); body.append(tr); }
+}
+
+// ---------- Chart ----------
+async function loadHistory() {
+  try {
+    const pts = await (await fetch('/api/history')).json();
+    $('chartSkel').hidden = true;
+    const svg = $('chart'); svg.textContent = '';
+    if (pts.length < 2) { $('chartLeft').textContent = 'Collecting data… check back in a few minutes.'; $('chartRight').textContent = ''; $('chartRange').textContent = ''; return; }
+    const W = 600, H = 150, pad = 8, t0 = pts[0].t, t1 = pts[pts.length - 1].t, max = Math.max(...pts.map(p => p.players), 1);
+    const x = t => pad + (t - t0) / Math.max(t1 - t0, 1) * (W - pad * 2), y = v => H - pad - v / max * (H - pad * 2);
+    const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.players).toFixed(1)}`).join(' '), ns = 'http://www.w3.org/2000/svg';
+    const area = document.createElementNS(ns, 'polygon'); area.setAttribute('points', `${x(t0)},${H - pad} ${line} ${x(t1)},${H - pad}`); area.setAttribute('fill', 'var(--accent-soft)');
+    const poly = document.createElementNS(ns, 'polyline'); poly.setAttribute('points', line); poly.setAttribute('fill', 'none'); poly.setAttribute('stroke', 'var(--accent)'); poly.setAttribute('stroke-width', '2'); poly.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.append(area, poly);
+    const mins = Math.round((t1 - t0) / 60000);
+    $('chartRange').textContent = mins >= 120 ? `last ${Math.round(mins / 60)}h` : `last ${mins} min`;
+    $('chartLeft').textContent = `Peak ${max} players`; $('chartRight').textContent = `Now ${pts[pts.length - 1].players}`;
+  } catch { $('chartSkel').hidden = true; }
+}
+
+// ---------- Busy-hours heatmap ----------
+async function loadHeat() {
+  try {
+    const d = await (await fetch('/api/heatmap')).json(), box = $('heat'); box.textContent = '';
+    if (!d.samples || d.samples < 120) { box.style.cssText = 'display:block;min-width:0'; box.textContent = 'Collecting data… this fills in after a few hours of tracking.'; return; }
+    box.style.cssText = '';
+    const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+    for (const [k, v] of Object.entries(d.cells)) { const [dow, hr] = k.split('-').map(Number); const loc = new Date(Date.UTC(2024, 0, 7 + dow, hr)); grid[loc.getDay()][loc.getHours()] = v; }
+    const max = Math.max(...grid.flat(), 1), names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    box.append(el('div')); for (let h = 0; h < 24; h++) box.append(el('div', h % 3 === 0 ? String(h) : '', 'hl'));
+    names.forEach((n, di) => { box.append(el('div', n, 'dl')); for (let h = 0; h < 24; h++) { const v = grid[di][h], c = el('div', undefined, 'c'); c.style.opacity = String(Math.max(0.07, v / max)); c.title = `${n} ${h}:00 · avg ${v} players`; box.append(c); } });
+    $('heatNote').textContent = `busiest hour averages ${max}`;
+  } catch {}
+}
+
+// ---------- Events & leaderboard ----------
+function until(ms) {
+  const d = ms - Date.now();
+  if (d < -60000) return 'in progress or just ended'; if (d < 60000) return 'starting now';
+  const m = Math.round(d / 60000); if (m < 60) return `starts in ${m} min`; if (m < 2880) return `starts in ${Math.floor(m / 60)}h ${m % 60}m`; return `starts in ${Math.round(m / 1440)} days`;
+}
+async function loadEvents() {
+  try {
+    const list = await (await fetch('/api/events')).json(), box = $('events'); box.textContent = '';
+    if (!list.length) { box.textContent = 'No events scheduled.'; return; }
+    for (const e of list) {
+      const c = el('div', undefined, 'call'), top = el('div', undefined, 'top');
+      top.append(el('strong', e.title), el('span', until(e.startsAt), 'muted')); c.append(top, el('div', new Date(e.startsAt).toLocaleString(), 'muted'));
+      if (e.description) c.append(el('div', e.description));
+      const b = el('button', e.rsvped ? 'Going ✓' : 'I’m going'); b.style.margin = '6px 8px 0 0'; if (e.rsvped) b.className = 'primary';
+      b.onclick = async () => { b.disabled = true; await fetch('/api/events/' + e.id + '/rsvp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); loadEvents(); };
+      const line = el('div'); line.append(b, el('span', `${e.going || 0} going`, 'muted')); c.append(line); box.append(c);
+    }
+  } catch {}
+}
+let lbRange = 'all';
+async function loadLeaderboard() {
+  try {
+    const d = await (await fetch('/api/activity?range=' + lbRange)).json(), box = $('leaderboard'); box.textContent = '';
+    $('lbNote').textContent = !d.tracked ? '' : lbRange === 'week' ? 'last 7 days' : lbRange === 'month' ? 'last 30 days' : `since ${new Date(d.since).toLocaleDateString()}`;
+    if (!d.top.length) { box.textContent = 'Collecting data… check back soon.'; return; }
+    const ol = document.createElement('ol'); ol.style.cssText = 'margin:0;padding-left:22px';
+    for (const p of d.top) { const li = document.createElement('li'); li.style.padding = '3px 0'; li.append(document.createTextNode(p.name + ' '), el('span', `${hm(p.minutes)}${p.team ? ' · ' + p.team : ''}`, 'muted')); ol.append(li); }
+    box.append(ol);
+  } catch {}
+}
+
+// ---------- Discord login + Roblox verification ----------
+let me = { authEnabled: false, user: null }, vStart = null;
+async function loadMe() {
+  try { me = await (await fetch('/api/me')).json(); } catch { return; }
+  const box = $('userBox'); box.textContent = '';
+  if (me.user) {
+    const wrap = el('div', undefined, 'user');
+    if (me.user.avatar) { const img = el('img', undefined, 'avatar'); img.src = me.user.avatar; img.alt = ''; wrap.append(img); }
+    wrap.append(el('span', me.user.name)); const out = el('a', 'Log out', 'link'); out.href = '/auth/logout'; wrap.append(out); box.append(wrap);
+  } else if (me.authEnabled) { const a = el('a', 'Log in with Discord', 'btn'); a.href = '/auth/login'; box.append(a); }
+  renderVerify();
+}
+function renderVerify() {
+  const card = $('verifyCard'), body = $('verifyBody');
+  if (!me.verifyEnabled) { card.hidden = true; return; }
+  card.hidden = false; body.textContent = '';
+  const msg = el('div', '', 'msg'), say = (t, ok) => { msg.textContent = t; msg.className = 'msg ' + (ok ? 'ok' : 'err'); };
+  if (!me.user) { $('verifyState').textContent = ''; body.append(el('p', 'Log in with Discord, then link your Roblox account to get your verified role.', 'muted')); const a = el('a', 'Log in with Discord', 'btn'); a.href = '/auth/login'; body.append(a); return; }
+  if (me.inGuild === false) { body.append(el('p', 'Join our Discord server first, then log in again.', 'muted')); return; }
+  if (me.link) {
+    $('verifyState').textContent = 'verified';
+    body.append(el('p', `You’re verified as ${me.link.robloxUsername}.`));
+    const act = el('p', '', 'muted'); body.append(act);
+    fetch('/api/activity/me').then(r => r.json()).then(a => { if (a.linked) act.textContent = `Time in-game since ${new Date(a.since).toLocaleDateString()}: ${hm(a.minutes)}`; }).catch(() => {});
+    const b = el('button', 'Unlink my account');
+    b.onclick = async () => { b.disabled = true; const r = await fetch('/api/verify/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (r.ok) { vStart = null; await loadMe(); } else { b.disabled = false; say((await r.json()).error || 'Could not unlink.'); } };
+    body.append(b, msg); return;
+  }
+  $('verifyState').textContent = '';
+  if (!vStart) {
+    body.append(el('p', 'Enter your Roblox username. I’ll give you a short code to put in your profile’s About section.', 'muted'));
+    const row = el('div', undefined, 'row'), input = el('input'); input.type = 'text'; input.placeholder = 'Roblox username'; input.maxLength = 20; input.setAttribute('aria-label', 'Roblox username');
+    const go = el('button', 'Get my code', 'primary');
+    go.onclick = async () => { go.disabled = true; say('', true); const r = await fetch('/api/verify/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: input.value }) }); const d = await r.json(); if (r.ok) { vStart = d; renderVerify(); } else { go.disabled = false; say(d.error || 'Something went wrong.'); } };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+    row.append(input, go); body.append(row, msg);
+  } else {
+    body.append(el('p', `Add this code anywhere in the About section of ${vStart.robloxUsername}’s Roblox profile, save it, then press the button. It expires in ${vStart.minutes} minutes.`, 'muted'), el('div', vStart.code, 'code'));
+    const row = el('div', undefined, 'row'), done = el('button', 'I’ve added the code', 'primary'), cancel = el('button', 'Start over');
+    done.onclick = async () => { done.disabled = true; say('Checking…', true); const r = await fetch('/api/verify/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); const d = await r.json(); if (r.ok) { vStart = null; await loadMe(); if (d.notes && d.notes.length) $('verifyBody').append(el('div', d.notes.join(' '), 'msg err')); } else { done.disabled = false; say(d.error || 'Something went wrong.'); } };
+    cancel.onclick = () => { vStart = null; renderVerify(); };
+    row.append(done, cancel); body.append(row, msg);
+  }
+}
+
+// ---------- Wiring ----------
+async function loadStats() {
+  nextAt = Date.now() + REFRESH_MS;
+  try {
+    const r = await fetch('/api/stats');
+    if (r.status === 401) { location.href = '/login'; return; }
+    if (!r.ok) { setStatus('erlc'); return; }
+    render(await r.json()); lastOk = Date.now(); setStatus('ok');
+  } catch { setStatus('net'); }
+}
+$('logoImg').addEventListener('load', () => { $('logoImg').hidden = false; $('logoLetter').hidden = true; });
+$('logoImg').addEventListener('error', () => { $('logoImg').hidden = true; $('logoLetter').hidden = false; });
+$('search').addEventListener('input', renderPlayers); $('teamFilter').addEventListener('change', renderPlayers); $('vehSearch').addEventListener('input', renderVehicles);
+let theme = ''; try { theme = localStorage.getItem('theme') || ''; } catch {}
+const applyTheme = t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+applyTheme(theme);
+$('themeBtn').addEventListener('click', () => { const dark = theme ? theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; theme = dark ? 'light' : 'dark'; applyTheme(theme); try { localStorage.setItem('theme', theme); } catch {} });
+document.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+  const grp = th.closest('table').querySelector('tbody').id === 'playerRows' ? 'players' : 'veh', s = sortState[grp], k = th.dataset.sort;
+  s.dir = s.key === k ? -s.dir : 1; s.key = k;
+  th.closest('tr').querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc')); th.classList.add(s.dir === 1 ? 'asc' : 'desc');
+  if (grp === 'players') renderPlayers(); else renderVehicles();
+}));
+document.querySelectorAll('#lbTabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('#lbTabs button').forEach(x => x.classList.remove('active')); b.classList.add('active'); lbRange = b.dataset.range; loadLeaderboard(); }));
+$('alertNum').value = alertAt || ''; showAlertMsg();
+$('alertGo').addEventListener('click', async () => {
+  const n = Math.max(0, Math.floor(Number($('alertNum').value) || 0));
+  if (n && !('Notification' in window)) { showAlertMsg('This browser doesn’t support notifications.'); return; }
+  if (n && Notification.permission !== 'granted') { const p = await Notification.requestPermission(); if (p !== 'granted') { showAlertMsg('Notifications are blocked. Allow them for this site in your browser settings.'); return; } }
+  alertAt = n; alerted = Boolean(data && data.current >= n); try { localStorage.setItem('alertAt', String(n)); } catch {} showAlertMsg();
+});
+loadStats(); loadMe(); loadHistory(); loadEvents(); loadLeaderboard(); loadHeat();
+setInterval(loadHeat, 300000); setInterval(loadStats, REFRESH_MS); setInterval(loadHistory, 60000); setInterval(loadEvents, 60000); setInterval(loadLeaderboard, 60000);
+
+// ---------- Animations ----------
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => { for (const en of es) { if (!en.isIntersecting) continue; const t = en.target; io.unobserve(t); t.classList.add('show'); setTimeout(() => t.classList.remove('rv', 'show'), 1000); } }, { threshold: 0.08 });
+    document.querySelectorAll('.grid, .two, .wrap > .card').forEach(g => { const items = g.classList.contains('card') ? [g] : [...g.children]; items.forEach((c, i) => { c.classList.add('rv'); c.style.setProperty('--d', Math.min(i, 7) * 60 + 'ms'); io.observe(c); }); });
+  }
+  const last = new Map(), raf = new Map();
+  const mo = new MutationObserver(ms => { for (const m of ms) {
+    const e = m.target.nodeType === 3 ? m.target.parentElement : m.target, txt = e.textContent, num = txt.match(/^\d+/); if (!num) continue;
+    const to = +num[0], rest = txt.slice(num[0].length), from = last.get(e) ?? 0; if (from === to && !raf.has(e)) continue;
+    cancelAnimationFrame(raf.get(e)); last.set(e, to); if (reduce) continue;
+    const t0 = performance.now(), step = now => { const p = Math.min(1, (now - t0) / 700); e.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3))) + rest; mo.takeRecords(); if (p < 1) raf.set(e, requestAnimationFrame(step)); else raf.delete(e); };
+    raf.set(e, requestAnimationFrame(step));
+  } });
+  ['players', 'queue', 'staffCount', 'callCount', 'vehCount', 'peak'].forEach(id => mo.observe($(id), { childList: true, characterData: true, subtree: true }));
+  const links = [...document.querySelectorAll('.nav a')];
+  const so = new IntersectionObserver(es => { for (const en of es) if (en.isIntersecting) links.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + en.target.id)); }, { rootMargin: '-35% 0px -60% 0px' });
+  links.forEach(a => { const t = document.querySelector(a.getAttribute('href')); if (t) so.observe(t); });
+  let spin = 0; $('themeBtn').addEventListener('click', () => { spin += 180; $('themeBtn').style.transform = `rotate(${spin}deg)`; });
+  const bar = $('refreshBar'); (function f() { bar.style.width = Math.min(100, Math.max(0, 100 - (nextAt - Date.now()) / REFRESH_MS * 100)) + '%'; requestAnimationFrame(f); })();
+  setTimeout(() => document.body.classList.add('settled'), 4000);
+})();
+</script>
+</body>
+</html>
