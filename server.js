@@ -194,6 +194,8 @@ app.get('/api/stats', async (req, res) => {
       teamBalance: data.TeamBalance ?? null,
       accVerifiedReq: data.AccVerifiedReq || null,
       joinKey: String(SHOW_JOIN_CODE).toLowerCase() === 'true' ? data.JoinKey : null,
+      peaks: { today: meta.peakDay.date === dayKey() ? meta.peakDay.n : 0, allTime: meta.peakAll, allTimeAt: meta.peakAllAt },
+      logo: /^https:\/\//.test(process.env.SERVER_LOGO_URL || '') ? process.env.SERVER_LOGO_URL : null,
       teams, staff, players: list, calls, vehicles,
       vehicleCount: (data.Vehicles || []).length,
       verified,
@@ -214,28 +216,63 @@ function trackActivity(players) {
   for (const p of players) {
     const [name, id] = String(p.Player).split(':');
     if (!id) continue;
-    const a = (activity.players[id] ||= { name, minutes: 0, teams: {}, perm: 'Normal' });
+    const a = (activity.players[id] ||= { name, minutes: 0, teams: {}, perm: 'Normal', days: {} });
     a.name = name; a.minutes += 1; a.perm = p.Permission || 'Normal';
+    a.days ||= {};
+    const dk = dayKey(); a.days[dk] = (a.days[dk] || 0) + 1;
     const team = p.Team || 'Unknown';
     a.teams[team] = (a.teams[team] || 0) + 1;
   }
-  if (++activityTicks % 5 === 0) saveJson('activity.json', activity);
+  if (++activityTicks % 5 === 0) {
+    const cutoff = dayKey(Date.now() - 40 * 86400_000); // keep ~40 days of per-day minutes
+    for (const a of Object.values(activity.players)) for (const d of Object.keys(a.days || {})) if (d < cutoff) delete a.days[d];
+    saveJson('activity.json', activity);
+  }
 }
 const mainTeam = a => Object.entries(a.teams).sort((x, y) => y[1] - x[1])[0]?.[0] || '';
 
 // ---------- Player-count history (in memory, last 24 hours) ----------
 // Resets whenever the service restarts or sleeps (normal on Render's free plan).
+// ---------- Peaks + busy-hours heatmap (saved to data/stats.json) ----------
+const QUOTA = Number(process.env.STAFF_WEEKLY_HOURS) || 0; // weekly hours target for staff (0 = off)
+let meta = loadJson('stats.json', null) || {};
+meta.peakAll ||= 0; meta.peakAllAt ||= 0; meta.peakDay ||= { date: '', n: 0 }; meta.hourly ||= {};
+let metaTicks = 0;
+function dayKey(t = Date.now()) { return new Date(t).toISOString().slice(0, 10); }
+function minutesSince(a, days) {
+  const from = dayKey(Date.now() - (days - 1) * 86400_000);
+  return Object.entries(a.days || {}).reduce((sum, [d, m]) => (d >= from ? sum + m : sum), 0);
+}
+function recordPeaks(n) {
+  const now = Date.now(), today = dayKey(now);
+  if (meta.peakDay.date !== today) meta.peakDay = { date: today, n: 0 };
+  if (n > meta.peakDay.n) meta.peakDay.n = n;
+  if (n > meta.peakAll) { meta.peakAll = n; meta.peakAllAt = now; }
+  const dt = new Date(now), k = `${dt.getUTCDay()}-${dt.getUTCHours()}`;
+  const h = (meta.hourly[k] ||= { sum: 0, n: 0 });
+  h.sum += n; h.n += 1;
+  if (++metaTicks % 5 === 0) saveJson('stats.json', meta);
+}
+
 const history = [];
 async function sample() {
   try {
     const d = await erlc(PUBLIC_FLAGS, 55_000);
     history.push({ t: Date.now(), players: d.CurrentPlayers ?? (d.Players || []).length, queue: (d.Queue || []).length });
     while (history.length > 1440) history.shift();
+    recordPeaks(d.CurrentPlayers ?? (d.Players || []).length);
     trackActivity(d.Players || []);
   } catch {}
 }
 if (ERLC_SERVER_KEY) { sample(); setInterval(sample, 60_000); }
 app.get('/api/history', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(history); });
+// Average players for each (UTC day-of-week, UTC hour); the page converts to the viewer's local time.
+app.get('/api/heatmap', (req, res) => {
+  const cells = {}; let samples = 0;
+  for (const [k, v] of Object.entries(meta.hourly)) { cells[k] = v.n ? +(v.sum / v.n).toFixed(1) : 0; samples += v.n; }
+  res.set('Cache-Control', 'no-store');
+  res.json({ cells, samples });
+});
 
 // ---------- Melonly (public summary only) ----------
 app.get('/api/melonly', async (req, res) => {
@@ -484,6 +521,14 @@ function requireStaff(req, res, next) {
   return res.status(401).json({ error: 'Staff access required.' });
 }
 
+// Audit trail of staff actions (saved to data/audit.json)
+let auditLog = loadJson('audit.json', []);
+function audit(who, action, detail = '') {
+  auditLog.unshift({ Timestamp: Math.floor(Date.now() / 1000), Staff: who, Action: action, Detail: String(detail).slice(0, 200) });
+  if (auditLog.length > 200) auditLog.length = 200;
+  saveJson('audit.json', auditLog);
+}
+
 const nameOf = s => String(s || '').split(':')[0];
 const topN = (map, n = 5) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name, count]) => ({ name, count }));
 const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
@@ -529,6 +574,7 @@ app.post('/api/staff/announce', requireStaff, async (req, res) => {
     });
     const body = await r.json().catch(() => ({}));
     console.log(`[announce] ${req.staffUser}: ${prefix} ${message}`);
+    audit(req.staffUser, 'Announcement', `${prefix} ${message}`);
     if (!r.ok) return res.status(502).json({ error: body.message || `ERLC returned ${r.status}.` });
     res.json({ ok: true });
   } catch {
@@ -538,11 +584,14 @@ app.post('/api/staff/announce', requireStaff, async (req, res) => {
 
 // ---------- Public activity leaderboard ----------
 app.get('/api/activity', (req, res) => {
+  const range = ['week', 'month'].includes(req.query.range) ? req.query.range : 'all';
+  const minutes = a => (range === 'all' ? a.minutes : minutesSince(a, range === 'week' ? 7 : 30));
   const rows = Object.values(activity.players)
-    .sort((a, b) => b.minutes - a.minutes).slice(0, 10)
-    .map(a => ({ name: a.name, minutes: a.minutes, team: mainTeam(a) }));
+    .map(a => ({ name: a.name, minutes: minutes(a), team: mainTeam(a) }))
+    .filter(r => r.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes).slice(0, 10);
   res.set('Cache-Control', 'no-store');
-  res.json({ since: activity.since, tracked: Object.keys(activity.players).length, top: rows });
+  res.json({ since: activity.since, tracked: Object.keys(activity.players).length, range, top: rows });
 });
 
 app.get('/api/activity/me', requireLogin, (req, res) => {
@@ -554,6 +603,7 @@ app.get('/api/activity/me', requireLogin, (req, res) => {
 
 app.post('/api/staff/activity/reset', requireStaff, (req, res) => {
   console.log(`[activity] reset by ${req.staffUser}`);
+  audit(req.staffUser, 'Activity counters reset');
   activity = { since: Date.now(), players: {} };
   saveJson('activity.json', activity);
   res.json({ ok: true });
@@ -564,7 +614,21 @@ let events = loadJson('events.json', []);
 app.get('/api/events', (req, res) => {
   const cutoff = Date.now() - 2 * 3600_000; // keep an event visible for 2 hours after it starts
   res.set('Cache-Control', 'no-store');
-  res.json(events.filter(e => e.startsAt > cutoff).sort((a, b) => a.startsAt - b.startsAt).slice(0, 10));
+  const s = getSession(req);
+  res.json(events.filter(e => e.startsAt > cutoff).sort((a, b) => a.startsAt - b.startsAt).slice(0, 10).map(e => ({
+    id: e.id, title: e.title, description: e.description, startsAt: e.startsAt,
+    going: (e.rsvps || []).length, rsvped: Boolean(s && (e.rsvps || []).includes(s.id)),
+  })));
+});
+app.post('/api/events/:id/rsvp', requireLogin, (req, res) => {
+  if (!req.session.inGuild) return res.status(403).json({ error: 'Join the Discord server first.' });
+  const e = events.find(x => x.id === req.params.id);
+  if (!e) return res.status(404).json({ error: 'Event not found.' });
+  e.rsvps ||= [];
+  const i = e.rsvps.indexOf(req.session.id);
+  if (i >= 0) e.rsvps.splice(i, 1); else e.rsvps.push(req.session.id);
+  saveJson('events.json', events);
+  res.json({ ok: true, going: e.rsvps.length, rsvped: i < 0 });
 });
 app.post('/api/staff/events', requireStaff, (req, res) => {
   const title = String(req.body.title || '').trim().slice(0, 80);
@@ -573,12 +637,16 @@ app.post('/api/staff/events', requireStaff, (req, res) => {
   if (!title) return res.status(400).json({ error: 'Give the event a title.' });
   if (!Number.isFinite(startsAt) || startsAt < Date.now() - 3600_000) return res.status(400).json({ error: 'Pick a start time in the future.' });
   if (events.length >= 100) return res.status(400).json({ error: 'Too many events. Delete some first.' });
-  events.push({ id: crypto.randomBytes(6).toString('hex'), title, description, startsAt, by: req.staffUser });
+  events.push({ id: crypto.randomBytes(6).toString('hex'), title, description, startsAt, by: req.staffUser, rsvps: [] });
   saveJson('events.json', events);
+  audit(req.staffUser, 'Event created', title);
+  notify({ title: `New event: ${title}`, description: `${description ? description + '\n\n' : ''}Starts <t:${Math.floor(startsAt / 1000)}:F>`, color: 0x16a34a });
   res.json({ ok: true });
 });
 app.delete('/api/staff/events/:id', requireStaff, (req, res) => {
   const before = events.length;
+  const gone = events.find(e => e.id === req.params.id);
+  if (gone) audit(req.staffUser, 'Event deleted', gone.title);
   events = events.filter(e => e.id !== req.params.id);
   if (events.length === before) return res.status(404).json({ error: 'Event not found.' });
   saveJson('events.json', events);
@@ -632,7 +700,13 @@ const STAFF_FEEDS = {
   activity: async () => Object.values(activity.players)
     .filter(a => a.perm && a.perm !== 'Normal')
     .sort((a, b) => b.minutes - a.minutes)
-    .map(a => ({ Staff: a.name, Role: a.perm, Hours: (a.minutes / 60).toFixed(1), Minutes: a.minutes, Team: mainTeam(a) })),
+    .map(a => {
+      const wk = minutesSince(a, 7);
+      const row = { Staff: a.name, Role: a.perm, Hours: (a.minutes / 60).toFixed(1), 'Week (h)': (wk / 60).toFixed(1), Minutes: a.minutes, Team: mainTeam(a) };
+      if (QUOTA > 0) row.Quota = wk >= QUOTA * 60 ? '✓ met' : `${((QUOTA * 60 - wk) / 60).toFixed(1)}h short`;
+      return row;
+    }),
+  audit: async () => auditLog,
   melonlymembers: () => melonly('/server/members'),
 };
 app.get('/api/staff/:feed', requireStaff, async (req, res) => {

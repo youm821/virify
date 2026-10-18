@@ -22,10 +22,18 @@
          font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 56px; }
   header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-  h1 { font-size: 22px; margin: 0; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .logo { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+          display: grid; place-items: center; font-weight: 700; font-size: 18px; overflow: hidden; flex: none; border: 1px solid var(--line); }
+  .logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  h1 { font-size: 22px; margin: 0; overflow-wrap: anywhere; }
   .live { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); flex: none; }
   .dot.off { background: var(--warn); }
+  .dot.bad { background: var(--bad); }
+  .banner { padding: 10px 14px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; border: 1px solid; }
+  .banner.warn { background: rgba(217,119,6,.14); color: var(--warn); border-color: var(--warn); }
+  .banner.bad { background: rgba(220,38,38,.14); color: var(--bad); border-color: var(--bad); }
   .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
   .stat .label { color: var(--muted); font-size: 13px; }
@@ -75,66 +83,145 @@
   .lists ol { margin: 0; padding-left: 20px; font-size: 14px; } .lists li span { color: var(--muted); }
   textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
   [hidden] { display: none !important; }
+
+  /* manual theme override (the toggle button sets data-theme on <html>) */
+  :root[data-theme="dark"] { --bg: #0e1116; --card: #171b22; --text: #e8eaee; --muted: #98a1b0; --line: #262c36; --accent: #5b8def; --accent-soft: rgba(91,141,239,.18); --good: #34d17a; --warn: #f0a23b; --bad: #f26b6b; }
+  :root[data-theme="light"] { --bg: #f4f5f7; --card: #ffffff; --text: #14161a; --muted: #5d6573; --line: #e1e4ea; --accent: #2563eb; --accent-soft: rgba(37,99,235,.12); --good: #16a34a; --warn: #d97706; --bad: #dc2626; }
+  html { scroll-behavior: smooth; }
+  [id] { scroll-margin-top: 60px; }
+  .nav { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 16px; padding: 8px 16px;
+         background: var(--bg); border-bottom: 1px solid var(--line); }
+  .nav a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .nav a:hover { background: var(--accent-soft); color: var(--accent); }
+  .call.police { border-left: 3px solid #3b82f6; padding-left: 10px; }
+  .call.fire { border-left: 3px solid #ef4444; padding-left: 10px; }
+  .call.ems { border-left: 3px solid #22c55e; padding-left: 10px; }
+  .call.alert .warnline { color: var(--bad); font-weight: 600; font-size: 13px; }
+  th[data-sort] { cursor: pointer; user-select: none; }
+  th.asc::after { content: " ▲"; font-size: 10px; } th.desc::after { content: " ▼"; font-size: 10px; }
+  .heat { display: grid; grid-template-columns: 34px repeat(24, minmax(10px, 1fr)); gap: 2px; min-width: 420px; }
+  .heat .c { aspect-ratio: 1; min-height: 10px; background: var(--accent); border-radius: 3px; }
+  .heat .hl, .heat .dl { font-size: 10px; color: var(--muted); line-height: 1.6; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .toolbar input { flex: 1 1 180px; width: auto; }
+  .tabs.small { margin-bottom: 8px; }
+  .tabs.small button { padding: 3px 10px; font-size: 13px; }
+
+  /* ---- Loading skeletons (replace the old "Loading…" text) ---- */
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .skel, .sk {
+    background: linear-gradient(90deg, var(--line) 25%, var(--accent-soft) 50%, var(--line) 75%);
+    background-size: 200% 100%; animation: shimmer 1.3s linear infinite; border-radius: 6px;
+  }
+  .skel { height: 14px; margin: 9px 0; }
+  .skel.short { width: 60%; }
+  .stat .value.sk { color: transparent; width: 72px; height: 34px; }
+  @media (prefers-reduced-motion: reduce) { .skel, .sk { animation: none; } }
+
+  /* ---- Tables turn into cards on small screens ---- */
+  @media (max-width: 640px) {
+    .wrap { padding: 16px 12px 48px; }
+    .table-wrap { overflow-x: visible; max-height: 480px; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+    table.cards thead { display: none; }
+    table.cards tr { border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; margin-bottom: 8px; background: var(--bg); }
+    table.cards td { display: flex; justify-content: space-between; gap: 14px; border: 0; padding: 4px 0;
+                     white-space: normal; text-align: right; overflow-wrap: anywhere; }
+    table.cards td::before { content: attr(data-label); color: var(--muted); text-align: left; flex: none; }
+    table.cards td[data-label=""]::before { display: none; }
+    .two { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1 id="title">ERLC Live Dashboard</h1>
+    <div class="brand">
+      <div class="logo" id="logoBox"><img id="logoImg" alt="" hidden><span id="logoLetter">E</span></div>
+      <h1 id="title">ERLC Live Dashboard</h1>
+    </div>
     <div class="row" style="align-items:center;gap:16px;flex-wrap:wrap">
-      <div class="live"><span class="dot" id="dot"></span><span id="updated">Connecting…</span></div>
+      <div class="live"><span class="dot off" id="dot"></span><span id="updated">Connecting…</span></div>
       <div id="userBox"></div>
+      <button id="themeBtn" aria-label="Switch light/dark theme" title="Switch light/dark theme">◐</button>
     </div>
   </header>
 
-  <div class="grid">
-    <div class="card stat"><div class="label">Players online</div><div class="value" id="players">–</div></div>
-    <div class="card stat"><div class="label">In queue</div><div class="value" id="queue">–</div></div>
-    <div class="card stat"><div class="label">Staff in-game</div><div class="value" id="staffCount">–</div></div>
-    <div class="card stat"><div class="label">Active 911 calls</div><div class="value" id="callCount">–</div></div>
-    <div class="card stat"><div class="label">Vehicles spawned</div><div class="value" id="vehCount">–</div></div>
-    <div class="card stat"><div class="label">Peak (session)</div><div class="value" id="peak">–</div></div>
+  <nav class="nav" aria-label="Sections">
+    <a href="#overview">Overview</a><a href="#eventsSec">Events</a><a href="#heatCard">Busy hours</a>
+    <a href="#playersSec">Players</a><a href="#vehSec">Vehicles</a><a href="#staffCard">Staff</a>
+  </nav>
+
+  <div class="banner" id="banner" role="alert" hidden></div>
+
+  <div class="grid" id="overview">
+    <div class="card stat"><div class="label">Players online</div><div class="value sk" id="players">&nbsp;</div></div>
+    <div class="card stat"><div class="label">In queue</div><div class="value sk" id="queue">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Staff in-game</div><div class="value sk" id="staffCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Active 911 calls</div><div class="value sk" id="callCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Vehicles spawned</div><div class="value sk" id="vehCount">&nbsp;</div></div>
+    <div class="card stat"><div class="label">Peak today</div><div class="value sk" id="peak">&nbsp;</div><div class="muted" id="peakAll" style="font-size:12px"></div></div>
     <div class="card stat" id="melonlyCard" hidden><div class="label" id="melonlyLabel">Melonly members</div><div class="value" id="melonlyCount">–</div></div>
     <div class="card stat" id="verifiedCard" hidden><div class="label">Verified members</div><div class="value" id="verified">–</div></div>
   </div>
 
   <div class="card section">
     <h2>Players over time <small id="chartRange"></small></h2>
-    <div class="chart-box"><svg id="chart" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Player count over time"></svg></div>
+    <div class="chart-box">
+      <div class="skel" id="chartSkel" style="height:150px;margin:0"></div>
+      <svg id="chart" viewBox="0 0 600 150" preserveAspectRatio="none" role="img" aria-label="Player count over time"></svg>
+    </div>
     <div class="chart-meta"><span id="chartLeft"></span><span id="chartRight"></span></div>
   </div>
 
   <div class="two">
-    <div class="card"><h2>Players by team</h2><div id="teams" class="muted">Loading…</div></div>
-    <div class="card"><h2>Staff on duty</h2><div id="staff" class="muted">Loading…</div></div>
+    <div class="card"><h2>Players by team</h2><div id="teams" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Staff on duty</h2><div id="staff" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
   </div>
 
   <div class="two">
-    <div class="card"><h2>Active emergency calls <small id="callsNote"></small></h2><div id="calls" class="muted">Loading…</div></div>
-    <div class="card"><h2>Server info</h2><dl class="kv" id="info"></dl></div>
+    <div class="card"><h2>Most wanted <small>3+ stars</small></h2><div id="wanted" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Player alert</h2>
+      <div class="muted" style="margin-bottom:8px">Get a browser notification when the server reaches this many players (while this tab is open).</div>
+      <div class="row"><input type="number" id="alertNum" min="0" max="100" placeholder="e.g. 20" aria-label="Alert at player count" style="width:110px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit"><button class="primary" id="alertGo">Save</button></div>
+      <div class="msg muted" id="alertMsg"></div>
+    </div>
   </div>
 
   <div class="two">
-    <div class="card"><h2>Upcoming events</h2><div id="events" class="muted">Loading…</div></div>
-    <div class="card"><h2>Most active players <small id="lbNote"></small></h2><div id="leaderboard" class="muted">Loading…</div></div>
+    <div class="card"><h2>Active emergency calls <small id="callsNote"></small></h2><div id="calls" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Server info</h2><dl class="kv" id="info"><div class="skel" style="grid-column:1/-1"></div><div class="skel short" style="grid-column:1/-1"></div></dl></div>
   </div>
 
-  <div class="card section">
+  <div class="two" id="eventsSec">
+    <div class="card"><h2>Upcoming events</h2><div id="events" class="muted"><div class="skel"></div><div class="skel short"></div></div></div>
+    <div class="card"><h2>Most active players <small id="lbNote"></small></h2><div class="tabs small" id="lbTabs"><button data-range="week">This week</button><button data-range="month">This month</button><button data-range="all" class="active">All time</button></div><div id="leaderboard" class="muted"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></div></div>
+  </div>
+
+  <div class="card section" id="heatCard">
+    <h2>Busy hours <small id="heatNote"></small></h2>
+    <div style="overflow-x:auto"><div class="heat" id="heat"></div></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Average players by hour, in your local time. Darker means busier.</div>
+  </div>
+
+  <div class="card section" id="playersSec">
     <h2>Online players <small id="playerNote"></small></h2>
     <div class="filters">
       <input type="text" id="search" placeholder="Search players, callsigns, streets…" aria-label="Search players">
       <select id="teamFilter" aria-label="Filter by team"><option value="">All teams</option></select>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>Player</th><th>Team</th><th>Callsign</th><th>Location</th><th>Wanted</th><th>Role</th></tr></thead><tbody id="playerRows"></tbody></table>
+      <table class="cards"><thead><tr><th data-sort="name">Player</th><th data-sort="team">Team</th><th data-sort="callsign">Callsign</th><th data-sort="street">Location</th><th data-sort="wanted">Wanted</th><th data-sort="permission">Role</th></tr></thead>
+        <tbody id="playerRows"><tr><td colspan="6"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></td></tr></tbody></table>
     </div>
   </div>
 
-  <div class="card section">
+  <div class="card section" id="vehSec">
     <h2>Spawned vehicles <small id="vehNote"></small></h2>
     <input type="text" id="vehSearch" placeholder="Search by vehicle, owner, or plate…" aria-label="Search vehicles">
     <div class="table-wrap">
-      <table><thead><tr><th>Vehicle</th><th>Owner</th><th>Plate</th><th>Livery</th><th>Colour</th></tr></thead><tbody id="vehRows"></tbody></table>
+      <table class="cards"><thead><tr><th data-sort="name">Vehicle</th><th data-sort="owner">Owner</th><th data-sort="plate">Plate</th><th data-sort="texture">Livery</th><th data-sort="colorName">Colour</th></tr></thead>
+        <tbody id="vehRows"><tr><td colspan="5"><div class="skel"></div><div class="skel"></div><div class="skel short"></div></td></tr></tbody></table>
     </div>
   </div>
 
@@ -168,12 +255,14 @@
         <button data-feed="commandlogs">Command logs</button>
         <button data-feed="activity">Staff activity</button>
         <button data-feed="events">Events</button>
+        <button data-feed="audit">Audit log</button>
         <button data-feed="melonlymembers" id="melonlyTab" hidden>Melonly members</button>
         <button data-feed="announce" id="announceTab" hidden>Send message</button>
       </div>
       <div id="insightsView"></div>
       <div id="feedView" hidden>
-        <div class="table-wrap" style="max-height:420px"><table id="feedTable"></table></div>
+        <div class="toolbar"><input type="text" id="feedSearch" placeholder="Filter rows…" aria-label="Filter rows"><button id="csvBtn">Export CSV</button></div>
+        <div class="table-wrap" style="max-height:420px"><table id="feedTable" class="cards"></table></div>
         <div class="muted" id="feedNote" style="margin-top:8px"></div>
         <div id="actTools" hidden style="margin-top:10px"><button id="actReset">Reset activity counters</button> <span class="muted" id="actMsg"></span></div>
       </div>
@@ -186,7 +275,7 @@
             <div class="row" style="margin-top:8px"><button class="primary" id="evGo">Post event</button></div>
             <div class="msg" id="evMsg"></div>
           </div>
-          <div id="evAdminList" class="muted">Loading…</div>
+          <div id="evAdminList" class="muted"><div class="skel"></div><div class="skel short"></div></div>
         </div>
       </div>
       <div id="announceView" hidden>
@@ -210,24 +299,69 @@ let peak = 0;
 try { staffKey = sessionStorage.getItem('staffKey') || ''; } catch {}
 
 const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+// table cell with a data-label (used for the mobile card layout)
+const cell = (label, val) => { const td = el('td', val); td.dataset.label = label; return td; };
 const ago = ts => {
   const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
 };
+const agoMs = ms => ago(ms / 1000);
+
+// ---------- Connection status: last-updated countdown + banner ----------
+const REFRESH_MS = 10000;
+let lastOk = 0;                       // when the last successful refresh happened
+let nextAt = Date.now() + REFRESH_MS; // when the next refresh is due
+let status = 'connecting';            // connecting | ok | erlc | net
+
+function setStatus(s) {
+  status = s;
+  tick();
+}
+function tick() {
+  const now = Date.now();
+  const dot = $('dot'), banner = $('banner'), upd = $('updated');
+  const age = lastOk ? agoMs(lastOk) : null;
+
+  if (status === 'ok') {
+    banner.hidden = true;
+    dot.className = 'dot';
+  } else if (status === 'erlc') {
+    dot.className = 'dot bad';
+    banner.className = 'banner bad'; banner.hidden = false;
+    banner.textContent = 'The ER:LC API isn’t responding right now. ' + (age ? `Showing the last data we got (${age}).` : 'No data yet.');
+  } else if (status === 'net') {
+    dot.className = 'dot off';
+    banner.className = 'banner warn'; banner.hidden = false;
+    banner.textContent = 'Can’t reach the dashboard server. Retrying automatically…' + (age ? ` Last data ${age}.` : '');
+  } else {
+    dot.className = 'dot off';
+  }
+
+  if (!lastOk) { upd.textContent = status === 'connecting' ? 'Connecting…' : 'No data yet'; return; }
+  const secs = Math.max(0, Math.floor((now - lastOk) / 1000));
+  const left = Math.max(0, Math.ceil((nextAt - now) / 1000));
+  upd.textContent = `Updated ${secs}s ago · refreshing in ${left}s`;
+}
+setInterval(tick, 1000);
 
 // ---------- Main stats ----------
 function render(d) {
   data = d;
-  $('title').textContent = d.name || 'ERLC Live Dashboard';
+  document.querySelectorAll('.sk').forEach(e => e.classList.remove('sk'));
+  const name = d.name || 'ERLC Live Dashboard';
+  $('title').textContent = name;
+  document.title = name;
+  $('logoLetter').textContent = (name.trim()[0] || 'E').toUpperCase();
+  if (d.logo && $('logoImg').getAttribute('src') !== d.logo) $('logoImg').src = d.logo;
   $('players').textContent = d.max ? `${d.current} / ${d.max}` : d.current;
   $('queue').textContent = d.queue;
   $('staffCount').textContent = d.staff.length;
   $('callCount').textContent = d.calls.length;
   $('vehCount').textContent = d.vehicleCount;
-  peak = Math.max(peak, d.current);
-  $('peak').textContent = peak;
+  if (d.peaks) { $('peak').textContent = d.peaks.today; $('peakAll').textContent = `All-time: ${d.peaks.allTime}`; }
+  else { peak = Math.max(peak, d.current); $('peak').textContent = peak; }
   if (d.verified !== null) { $('verifiedCard').hidden = false; $('verified').textContent = d.verified; }
 
   // teams
@@ -258,13 +392,17 @@ function render(d) {
   $('callsNote').textContent = d.calls.length ? `${d.calls.length} active` : '';
   if (!d.calls.length) callsEl.textContent = 'No active emergency calls.';
   for (const c of d.calls.slice(0, 12)) {
-    const box = el('div', undefined, 'call');
+    const tcls = String(c.team || '').toLowerCase().replace(/[^a-z]/g, '');
+    const waited = c.startedAt ? Math.floor(Date.now() / 1000 - c.startedAt) : 0;
+    const noOne = !c.responders && waited > 180;
+    const box = el('div', undefined, 'call ' + tcls + (noOne ? ' alert' : ''));
     const top = el('div', undefined, 'top');
     top.append(el('strong', `#${c.number} · ${c.team || 'Unknown'}`), el('span', c.startedAt ? ago(c.startedAt) : '', 'muted'));
     box.append(top);
     if (c.description) box.append(el('div', c.description));
     const meta = [c.where, c.responders ? `${c.responders} responding` : 'No responders'].filter(Boolean).join(' · ');
     box.append(el('div', meta, 'muted'));
+    if (noOne) box.append(el('div', `Waiting ${Math.floor(waited / 60)} min with no responders`, 'warnline'));
     callsEl.append(box);
   }
 
@@ -274,11 +412,53 @@ function render(d) {
   if (d.teamBalance !== null) rows.push(['Team balance', d.teamBalance ? 'On' : 'Off']);
   if (d.accVerifiedReq) rows.push(['Account verification', d.accVerifiedReq]);
   if (d.joinKey) rows.push(['Join code', d.joinKey]);
-  for (const [k, v] of rows) info.append(el('dt', k), el('dd', v));
+  for (const [k, v] of rows) {
+    const dd = el('dd', v);
+    if (k === 'Join code') {
+      const b = el('button', 'Copy'); b.style.cssText = 'margin-left:8px;padding:2px 8px;font-size:12px';
+      b.onclick = async () => { try { await navigator.clipboard.writeText(v); b.textContent = 'Copied!'; setTimeout(() => { b.textContent = 'Copy'; }, 1500); } catch { b.textContent = 'Select + copy'; } };
+      dd.append(b);
+    }
+    info.append(el('dt', k), dd);
+  }
 
-  renderPlayers(); renderVehicles();
-  $('dot').className = 'dot';
-  $('updated').textContent = 'Updated ' + new Date(d.updatedAt).toLocaleTimeString();
+  renderPlayers(); renderVehicles(); renderWanted(); checkAlert(d);
+}
+
+// ---------- Most wanted ----------
+function renderWanted() {
+  const box = $('wanted'); box.textContent = '';
+  const list = data.players.filter(p => p.wanted >= 3).sort((a, b) => b.wanted - a.wanted).slice(0, 8);
+  if (!list.length) { box.textContent = 'Nobody with 3+ stars right now.'; return; }
+  for (const p of list) {
+    const r = el('div', undefined, 'call'), top = el('div', undefined, 'top');
+    top.append(el('strong', p.name), el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad'));
+    r.append(top, el('div', [p.team, p.street].filter(Boolean).join(' · ') || '–', 'muted'));
+    box.append(r);
+  }
+}
+
+// ---------- Player-count alert (browser notification) ----------
+let alertAt = 0, alerted = true;
+try { alertAt = Number(localStorage.getItem('alertAt')) || 0; } catch {}
+function checkAlert(d) {
+  if (!alertAt) return;
+  if (d.current >= alertAt && !alerted) {
+    alerted = true;
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(`${d.name || 'Server'}: ${d.current} players online`, { body: `Reached your alert level of ${alertAt}.` });
+  }
+  if (d.current < alertAt) alerted = false;
+}
+function showAlertMsg(extra) { $('alertMsg').textContent = extra || (alertAt ? `Alert is on at ${alertAt}+ players.` : 'Alert is off.'); }
+
+// ---------- Sorting ----------
+const sortState = { players: { key: '', dir: 1 }, veh: { key: '', dir: 1 } };
+function sortRows(rows, s) {
+  if (!s.key) return;
+  rows.sort((a, b) => {
+    const x = a[s.key], y = b[s.key];
+    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), undefined, { numeric: true })) * s.dir;
+  });
 }
 
 function renderPlayers() {
@@ -288,16 +468,17 @@ function renderPlayers() {
   const rows = data.players.filter(p =>
     (!team || p.team === team) &&
     [p.name, p.callsign, p.street, p.postal, p.team].join(' ').toLowerCase().includes(q));
+  sortRows(rows, sortState.players);
   $('playerNote').textContent = `${rows.length} shown`;
   for (const p of rows) {
     const tr = document.createElement('tr');
     const loc = [p.street, p.postal ? `(Postal ${p.postal})` : ''].filter(Boolean).join(' ');
-    for (const val of [p.name, p.team, p.callsign || '–', loc || '–']) tr.append(el('td', val));
-    const w = el('td'); if (p.wanted > 0) w.append(el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad')); else w.textContent = '–';
-    tr.append(w, el('td', p.permission));
+    tr.append(cell('Player', p.name), cell('Team', p.team), cell('Callsign', p.callsign || '–'), cell('Location', loc || '–'));
+    const w = cell('Wanted'); if (p.wanted > 0) w.append(el('span', '★'.repeat(Math.min(p.wanted, 6)), 'badge bad')); else w.textContent = '–';
+    tr.append(w, cell('Role', p.permission));
     body.append(tr);
   }
-  if (!rows.length) { const tr = document.createElement('tr'); const td = el('td', 'No players match.', 'muted'); td.colSpan = 6; tr.append(td); body.append(tr); }
+  if (!rows.length) { const tr = document.createElement('tr'); const td = cell('', 'No players match.'); td.className = 'muted'; td.colSpan = 6; tr.append(td); body.append(tr); }
 }
 
 function renderVehicles() {
@@ -305,22 +486,24 @@ function renderVehicles() {
   const q = $('vehSearch').value.trim().toLowerCase();
   const body = $('vehRows'); body.textContent = '';
   const rows = data.vehicles.filter(v => [v.name, v.owner, v.plate, v.texture].join(' ').toLowerCase().includes(q));
+  sortRows(rows, sortState.veh);
   $('vehNote').textContent = data.vehicleCount > data.vehicles.length ? `showing ${data.vehicles.length} of ${data.vehicleCount}` : `${rows.length} shown`;
   for (const v of rows) {
     const tr = document.createElement('tr');
-    for (const val of [v.name, v.owner, v.plate, v.texture || '–']) tr.append(el('td', val));
-    const c = el('td'); const sw = el('span', undefined, 'swatch');
+    tr.append(cell('Vehicle', v.name), cell('Owner', v.owner), cell('Plate', v.plate), cell('Livery', v.texture || '–'));
+    const c = cell('Colour'); const sw = el('span', undefined, 'swatch');
     if (/^#[0-9a-f]{3,8}$/i.test(v.colorHex)) sw.style.background = v.colorHex;
-    c.append(sw, document.createTextNode(v.colorName || '–')); tr.append(c);
+    const lab = el('span'); lab.append(sw, document.createTextNode(v.colorName || '–')); c.append(lab); tr.append(c);
     body.append(tr);
   }
-  if (!rows.length) { const tr = document.createElement('tr'); const td = el('td', 'No vehicles to show.', 'muted'); td.colSpan = 5; tr.append(td); body.append(tr); }
+  if (!rows.length) { const tr = document.createElement('tr'); const td = cell('', 'No vehicles to show.'); td.className = 'muted'; td.colSpan = 5; tr.append(td); body.append(tr); }
 }
 
 // ---------- Chart ----------
 async function loadHistory() {
   try {
     const pts = await (await fetch('/api/history')).json();
+    $('chartSkel').hidden = true;
     const svg = $('chart'); svg.textContent = '';
     if (pts.length < 2) { $('chartLeft').textContent = 'Collecting data… check back in a few minutes.'; $('chartRight').textContent = ''; $('chartRange').textContent = ''; return; }
     const W = 600, H = 150, pad = 8;
@@ -341,7 +524,38 @@ async function loadHistory() {
     $('chartRange').textContent = mins >= 120 ? `last ${Math.round(mins / 60)}h` : `last ${mins} min`;
     $('chartLeft').textContent = `Peak ${max} players`;
     $('chartRight').textContent = `Now ${pts[pts.length - 1].players}`;
-    peak = Math.max(peak, max); $('peak').textContent = peak;
+  } catch { $('chartSkel').hidden = true; }
+}
+
+// ---------- Busy-hours heatmap ----------
+async function loadHeat() {
+  try {
+    const d = await (await fetch('/api/heatmap')).json();
+    const box = $('heat'); box.textContent = '';
+    if (!d.samples || d.samples < 120) {
+      box.style.cssText = 'display:block;min-width:0';
+      box.textContent = 'Collecting data… this fills in after a few hours of tracking.'; return;
+    }
+    box.style.cssText = '';
+    const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+    for (const [k, v] of Object.entries(d.cells)) {
+      const [dow, hr] = k.split('-').map(Number);
+      const loc = new Date(Date.UTC(2024, 0, 7 + dow, hr)); // Jan 7 2024 was a Sunday (UTC)
+      grid[loc.getDay()][loc.getHours()] = v;
+    }
+    const max = Math.max(...grid.flat(), 1);
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    box.append(el('div'));
+    for (let h = 0; h < 24; h++) box.append(el('div', h % 3 === 0 ? String(h) : '', 'hl'));
+    names.forEach((n, di) => {
+      box.append(el('div', n, 'dl'));
+      for (let h = 0; h < 24; h++) {
+        const v = grid[di][h], c = el('div', undefined, 'c');
+        c.style.opacity = String(Math.max(0.07, v / max)); c.title = `${n} ${h}:00 · avg ${v} players`;
+        box.append(c);
+      }
+    });
+    $('heatNote').textContent = `busiest hour averages ${max}`;
   } catch {}
 }
 
@@ -381,7 +595,14 @@ async function loadEvents() {
         top.append(el('strong', e.title), el('span', until(e.startsAt), 'muted'));
         c.append(top, el('div', new Date(e.startsAt).toLocaleString(), 'muted'));
         if (e.description) c.append(el('div', e.description));
+        if (id === 'events') {
+          const b = el('button', e.rsvped ? 'Going ✓' : 'I’m going'); b.style.margin = '6px 8px 0 0';
+          if (e.rsvped) b.className = 'primary';
+          b.onclick = async () => { b.disabled = true; await fetch('/api/events/' + e.id + '/rsvp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); loadEvents(); };
+          const line = el('div'); line.append(b, el('span', `${e.going || 0} going`, 'muted')); c.append(line);
+        }
         if (id === 'evAdminList') {
+          c.append(el('div', `${e.going || 0} going`, 'muted'));
           const del = el('button', 'Delete'); del.style.marginTop = '6px';
           del.onclick = async () => { del.disabled = true; await fetch('/api/staff/events/' + e.id, { method: 'DELETE', headers: staffHeaders() }); loadEvents(); };
           c.append(del);
@@ -391,11 +612,12 @@ async function loadEvents() {
     }
   } catch {}
 }
+let lbRange = 'all';
 async function loadLeaderboard() {
   try {
-    const d = await (await fetch('/api/activity')).json();
+    const d = await (await fetch('/api/activity?range=' + lbRange)).json();
     const box = $('leaderboard'); box.textContent = '';
-    $('lbNote').textContent = d.tracked ? `since ${new Date(d.since).toLocaleDateString()}` : '';
+    $('lbNote').textContent = !d.tracked ? '' : lbRange === 'week' ? 'last 7 days' : lbRange === 'month' ? 'last 30 days' : `since ${new Date(d.since).toLocaleDateString()}`;
     if (!d.top.length) { box.textContent = 'Collecting data… check back soon.'; return; }
     const ol = document.createElement('ol'); ol.style.cssText = 'margin:0;padding-left:22px';
     for (const p of d.top) {
@@ -503,17 +725,32 @@ function fmtCell(key, val) {
   if (typeof val === 'object') return JSON.stringify(val);
   return String(val);
 }
-function renderFeed(rows) {
+let feedRows = [], feedCols = [];
+function drawFeed() {
   const table = $('feedTable'); table.textContent = '';
-  if (!Array.isArray(rows)) rows = rows && (rows.data || rows.members) ? (rows.data || rows.members) : [];
-  if (!rows.length) { $('feedNote').textContent = 'Nothing to show right now.'; return; }
-  const cols = [...new Set(rows.flatMap(r => Object.keys(r)))].slice(0, 8);
-  const head = document.createElement('tr'); for (const c of cols) head.append(el('th', c));
+  const q = $('feedSearch').value.trim().toLowerCase();
+  const rows = q ? feedRows.filter(r => feedCols.some(c => fmtCell(c, r[c]).toLowerCase().includes(q))) : feedRows;
+  if (!rows.length) { $('feedNote').textContent = feedRows.length ? 'No entries match your filter.' : 'Nothing to show right now.'; return; }
+  const head = document.createElement('tr'); for (const c of feedCols) head.append(el('th', c));
   const thead = document.createElement('thead'); thead.append(head);
   const tbody = document.createElement('tbody');
-  for (const r of rows) { const tr = document.createElement('tr'); for (const c of cols) tr.append(el('td', fmtCell(c, r[c]))); tbody.append(tr); }
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    for (const c of feedCols) {
+      const txt = fmtCell(c, r[c]), td = cell(c, txt);
+      if (c === 'Quota') td.style.color = txt.startsWith('✓') ? 'var(--good)' : 'var(--bad)';
+      tr.append(td);
+    }
+    tbody.append(tr);
+  }
   table.append(thead, tbody);
-  $('feedNote').textContent = `${rows.length} entries, newest first where available.`;
+  $('feedNote').textContent = `${rows.length} of ${feedRows.length} entries, newest first where available.`;
+}
+function renderFeed(rows) {
+  if (!Array.isArray(rows)) rows = rows && (rows.data || rows.members) ? (rows.data || rows.members) : [];
+  feedRows = rows;
+  feedCols = [...new Set(rows.flatMap(r => Object.keys(r)))].slice(0, 8);
+  drawFeed();
 }
 function listBlock(title, rows) {
   const box = el('div'); box.append(el('h3', title));
@@ -558,15 +795,22 @@ async function loadView() {
 
 // ---------- Wiring ----------
 async function loadStats() {
+  nextAt = Date.now() + REFRESH_MS;
   try {
     const r = await fetch('/api/stats');
-    if (!r.ok) throw new Error();
+    if (r.status === 401) { location.href = '/login'; return; } // session expired
+    if (!r.ok) { setStatus('erlc'); return; }                   // server is up, ER:LC API is not
     render(await r.json());
+    lastOk = Date.now();
+    setStatus('ok');
   } catch {
-    $('dot').className = 'dot off';
-    $('updated').textContent = 'Can’t reach the server. Retrying…';
+    setStatus('net');                                           // couldn't reach our own server
   }
 }
+// server logo: show the image once it loads, otherwise keep the letter badge
+$('logoImg').addEventListener('load', () => { $('logoImg').hidden = false; $('logoLetter').hidden = true; });
+$('logoImg').addEventListener('error', () => { $('logoImg').hidden = true; $('logoLetter').hidden = false; });
+
 $('search').addEventListener('input', renderPlayers);
 $('teamFilter').addEventListener('change', renderPlayers);
 $('vehSearch').addEventListener('input', renderVehicles);
@@ -605,11 +849,59 @@ $('annGo').addEventListener('click', async () => {
 });
 document.querySelectorAll('[data-feed]').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('[data-feed]').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active'); feed = btn.dataset.feed; $('feedNote').textContent = 'Loading…'; loadView();
+  btn.classList.add('active'); feed = btn.dataset.feed; $('feedSearch').value = ''; $('feedNote').textContent = 'Loading…'; loadView();
 }));
 
-loadStats(); loadMe(); loadMelonly(); loadHistory(); loadEvents(); loadLeaderboard();
-setInterval(loadStats, 10000);
+// theme toggle
+let theme = ''; try { theme = localStorage.getItem('theme') || ''; } catch {}
+const applyTheme = t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+applyTheme(theme);
+$('themeBtn').addEventListener('click', () => {
+  const dark = theme ? theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  theme = dark ? 'light' : 'dark'; applyTheme(theme);
+  try { localStorage.setItem('theme', theme); } catch {}
+});
+// sortable table headers
+document.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+  const grp = th.closest('table').querySelector('tbody').id === 'playerRows' ? 'players' : 'veh';
+  const s = sortState[grp], k = th.dataset.sort;
+  s.dir = s.key === k ? -s.dir : 1; s.key = k;
+  th.closest('tr').querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
+  th.classList.add(s.dir === 1 ? 'asc' : 'desc');
+  if (grp === 'players') renderPlayers(); else renderVehicles();
+}));
+// leaderboard range tabs
+document.querySelectorAll('#lbTabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#lbTabs button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); lbRange = b.dataset.range; loadLeaderboard();
+}));
+// feed filter + CSV export
+$('feedSearch').addEventListener('input', drawFeed);
+$('csvBtn').addEventListener('click', () => {
+  if (!feedRows.length) return;
+  const esc = v => { let s = String(v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
+  const csv = [feedCols.map(esc).join(','), ...feedRows.map(r => feedCols.map(c => esc(fmtCell(c, r[c]))).join(','))].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = feed + '.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+// player-count alert
+$('alertNum').value = alertAt || ''; showAlertMsg();
+$('alertGo').addEventListener('click', async () => {
+  const n = Math.max(0, Math.floor(Number($('alertNum').value) || 0));
+  if (n && !('Notification' in window)) { showAlertMsg('This browser doesn’t support notifications.'); return; }
+  if (n && Notification.permission !== 'granted') {
+    const p = await Notification.requestPermission();
+    if (p !== 'granted') { showAlertMsg('Notifications are blocked. Allow them for this site in your browser settings.'); return; }
+  }
+  alertAt = n; alerted = Boolean(data && data.current >= n);
+  try { localStorage.setItem('alertAt', String(n)); } catch {}
+  showAlertMsg();
+});
+
+loadStats(); loadMe(); loadMelonly(); loadHistory(); loadEvents(); loadLeaderboard(); loadHeat();
+setInterval(loadHeat, 300000);
+setInterval(loadStats, REFRESH_MS);
 setInterval(() => { if (!$('staffArea').hidden && feed !== 'announce') loadView(); }, 15000);
 setInterval(loadHistory, 60000);
 setInterval(loadMelonly, 60000);
