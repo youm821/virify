@@ -3,13 +3,22 @@ const fs = require('fs');
 const path = require('path');
 
 module.exports = function (app, ctx) {
+  // Find a page by name, ignoring capital letters and stray spaces (GitHub keeps whatever name was uploaded)
+  const findPage = name => {
+    for (const dir of [path.join(__dirname, 'public'), __dirname]) {
+      let list = []; try { list = fs.readdirSync(dir); } catch { continue; }
+      const hit = list.find(f => f.trim().toLowerCase() === name);
+      if (hit) return path.join(dir, hit);
+    }
+    return null;
+  };
   const FLAGS = ['Players', 'Queue', 'EmergencyCalls', 'Vehicles']; // same flags as the dashboard, so the API result is shared
   const nameOf = s => String(s || '').split(':')[0];
   const low = s => String(s || '').toLowerCase();
 
   const candidates = [path.join(__dirname, 'public', 'mdt.html'), path.join(__dirname, 'mdt.html')];
   app.get('/mdt', (req, res) => {
-    const file = candidates.find(f => fs.existsSync(f));
+    const file = findPage('mdt.html');
     if (!file) return res.status(404).send('mdt.html is missing. Upload it next to server.js and redeploy.');
     res.set('Cache-Control', 'no-store');
     res.sendFile(file);
@@ -59,7 +68,7 @@ module.exports = function (app, ctx) {
   const pages = [path.join(__dirname, 'public', 'apply.html'), path.join(__dirname, 'apply.html')];
 
   app.get('/apply', (req, res) => {
-    const f = pages.find(x => fs.existsSync(x));
+    const f = findPage('apply.html');
     if (!f) return res.status(404).send('apply.html is missing. Upload it next to server.js and redeploy.');
     res.set('Cache-Control', 'no-store'); res.sendFile(f);
   });
@@ -109,7 +118,7 @@ module.exports = function (app, ctx) {
   // ---------- Profiles + settings pages ----------
   for (const [route, name] of [['/profile', 'profile.html'], ['/settings', 'settings.html']]) {
     app.get(route, (req, res) => {
-      const f = [path.join(__dirname, 'public', name), path.join(__dirname, name)].find(x => fs.existsSync(x));
+      const f = findPage(name);
       if (!f) return res.status(404).send(name + ' is missing. Upload it next to server.js and redeploy.');
       res.set('Cache-Control', 'no-store'); res.sendFile(f);
     });

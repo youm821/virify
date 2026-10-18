@@ -163,12 +163,14 @@ app.get(['/', '/index.html'], (req, res, next) => {
   res.status(500).send('members.html is missing. Upload it to the public folder (lowercase, with an s) and redeploy.');
 });
 try {
-  require('./extras')(app, {
+  require(['./extras', './extra'].find(m => { try { return require.resolve(m); } catch { return false; } }) || './extras')(app, {
     erlc, loadJson, saveJson,
     getSession: req => getSession(req),
     requireStaff: (req, res, next) => requireStaff(req, res, next),
     audit: (...a) => audit(...a),
     notify: e => notify(e),
+    activity: () => activity, links: () => links,
+    minutesSince: (a, d) => minutesSince(a, d), mainTeam: a => mainTeam(a),
   });
 } catch (e) { console.warn('extras.js not loaded:', e.message); }
 if (pageDir) {
@@ -263,6 +265,7 @@ app.get('/api/stats', async (req, res) => {
 // Like the history chart, this resets if your host wipes its disk on redeploy.
 let activity = loadJson('activity.json', null) || { since: Date.now(), players: {} };
 let activityTicks = 0;
+let heat = loadJson('mapheat.json', {}); // "x,z" (50-stud cells) -> player-minutes, powers the map heat layer
 function trackActivity(players) {
   for (const p of players) {
     const [name, id] = String(p.Player).split(':');
@@ -273,11 +276,17 @@ function trackActivity(players) {
     const dk = dayKey(); a.days[dk] = (a.days[dk] || 0) + 1;
     const team = p.Team || 'Unknown';
     a.teams[team] = (a.teams[team] || 0) + 1;
+    const loc = p.Location || {};
+    if (Number.isFinite(loc.LocationX) && Number.isFinite(loc.LocationZ)) {
+      const k = Math.round(loc.LocationX / 50) + ',' + Math.round(loc.LocationZ / 50);
+      if (heat[k] || Object.keys(heat).length < 6000) heat[k] = (heat[k] || 0) + 1;
+    }
   }
   if (++activityTicks % 5 === 0) {
     const cutoff = dayKey(Date.now() - 40 * 86400_000); // keep ~40 days of per-day minutes
     for (const a of Object.values(activity.players)) for (const d of Object.keys(a.days || {})) if (d < cutoff) delete a.days[d];
     saveJson('activity.json', activity);
+    saveJson('mapheat.json', heat);
   }
 }
 const mainTeam = a => Object.entries(a.teams).sort((x, y) => y[1] - x[1])[0]?.[0] || '';
@@ -316,6 +325,10 @@ async function sample() {
   } catch {}
 }
 if (ERLC_SERVER_KEY) { sample(); setInterval(sample, 60_000); }
+app.get('/api/mapheat', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ cells: Object.entries(heat).map(([k, v]) => { const [x, z] = k.split(',').map(Number); return [x * 50, z * 50, v]; }) });
+});
 app.get('/api/history', (req, res) => { res.set('Cache-Control', 'no-store'); res.json(history); });
 // Average players for each (UTC day-of-week, UTC hour); the page converts to the viewer's local time.
 app.get('/api/heatmap', (req, res) => {
@@ -855,8 +868,8 @@ app.post('/api/admin/command', requireAdmin, async (req, res) => {
 app.post('/api/admin/reset', requireAdmin, (req, res) => {
   const what = String(req.body.what || '');
   if (what === 'peaks') {
-    meta.peakAll = 0; meta.peakAllAt = 0; meta.peakDay = { date: '', n: 0 }; meta.hourly = {};
-    saveJson('stats.json', meta);
+    meta.peakAll = 0; meta.peakAllAt = 0; meta.peakDay = { date: '', n: 0 }; meta.hourly = {}; heat = {};
+    saveJson('stats.json', meta); saveJson('mapheat.json', heat);
   } else if (what === 'activity') {
     activity = { since: Date.now(), players: {} }; saveJson('activity.json', activity);
   } else if (what === 'events') {
