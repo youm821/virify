@@ -23,10 +23,11 @@
   button { padding:9px 16px; border-radius:8px; border:1px solid var(--accent); background:var(--accent); color:#fff; font:inherit; cursor:pointer; }
   .top { display:flex; justify-content:space-between; font-size:13px; }
 </style>
+<script src="/site.js" defer></script>
 </head>
 <body>
 <div class="wrap">
-  <a href="/">← Back to dashboard</a> · <a href="/settings">Settings</a>
+  <a href="/">← Home</a> · <a href="/settings">Settings</a>
   <div class="card"><h2>Look up a player</h2><div class="row"><input id="q" type="text" placeholder="Roblox username" aria-label="Roblox username"><button id="go">Search</button></div><div class="muted" id="err" style="margin-top:8px"></div></div>
   <div id="out"></div>
 </div>
@@ -37,7 +38,7 @@ const hm = m => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 async function load(name) {
   $('err').textContent = '';
   const r = await fetch('/api/profile' + (name ? '?name=' + encodeURIComponent(name) : ''));
-  if (r.status === 401) { location.href = '/login'; return; }
+  if (r.status === 401) { location.href = '/'; return; }
   const d = await r.json(), out = $('out'); out.textContent = '';
   if (!r.ok) { $('err').textContent = d.error || 'Something went wrong.'; return; }
   if (!d.linked) {

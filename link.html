@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link Roblox</title><link rel="stylesheet" href="/site.css"><script src="/site.js" defer></script></head>
+<body><div class="wrap">
+  <h1>Link your Roblox account</h1><p>This proves the account is yours and gives you your verified role.</p>
+  <div class="card" id="box"><span class="muted">Loading…</span></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const el = (t, x, c) => { const e = document.createElement(t); if (x !== undefined) e.textContent = x; if (c) e.className = c; return e; };
+const J = { 'Content-Type': 'application/json' };
+let me = null, started = null;
+const post = (u, b) => fetch(u, { method: 'POST', headers: J, body: JSON.stringify(b || {}) }).then(async r => ({ ok: r.ok, d: await r.json().catch(() => ({})) }));
+
+async function load() { me = await fetch('/api/me').then(r => r.json()).catch(() => null); draw(); }
+function draw() {
+  const box = $('box'); box.textContent = '';
+  const msg = el('div', '', 'msg'), say = (t, ok) => { msg.textContent = t; msg.className = 'msg ' + (ok ? 'ok' : 'err'); };
+  if (!me || !me.user) { box.append(el('p', 'Sign in with Discord first.')); const a = el('a', 'Sign in with Discord', 'btn'); a.href = '/auth/login'; box.append(a); return; }
+  if (!me.verifyEnabled) { box.append(el('p', 'Linking isn’t switched on for this server yet. Ask an admin.')); return; }
+  if (me.inGuild === false) { box.append(el('p', 'Join our Discord server first, then sign in again.')); return; }
+  if (me.link) {
+    box.append(el('h2', 'Linked'), el('p', `Your account is linked to ${me.link.robloxUsername}.`));
+    const b = el('button', 'Unlink', 'btn ghost');
+    b.onclick = async () => { b.disabled = true; const r = await post('/api/verify/remove'); if (r.ok) { started = null; load(); } else { b.disabled = false; say(r.d.error || 'Could not unlink.'); } };
+    box.append(b, msg); return;
+  }
+  if (!started) {
+    box.append(el('label', 'Roblox username'));
+    const i = el('input'); i.maxLength = 20; i.setAttribute('aria-label', 'Roblox username');
+    const go = el('button', 'Get my code', 'btn');
+    go.onclick = async () => { go.disabled = true; const r = await post('/api/verify/start', { username: i.value }); if (r.ok) { started = r.d; draw(); } else { go.disabled = false; say(r.d.error || 'Something went wrong.'); } };
+    i.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+    const row = el('div', undefined, 'row'); row.append(go); box.append(i, row, msg);
+  } else {
+    box.append(el('p', `Add this code anywhere in the About section of ${started.robloxUsername}’s Roblox profile and save it. It expires in ${started.minutes} minutes.`));
+    const code = el('div', started.code); code.style.cssText = 'font:600 22px ui-monospace,Menlo,Consolas,monospace;padding:12px;border:1px dashed var(--accent);border-radius:8px;display:inline-block;user-select:all';
+    const done = el('button', 'I’ve added the code', 'btn'), back = el('button', 'Start over', 'btn ghost');
+    done.onclick = async () => { done.disabled = true; say('Checking…', true); const r = await post('/api/verify/confirm'); if (r.ok) { started = null; await load(); if (r.d.notes && r.d.notes.length) $('box').append(el('div', r.d.notes.join(' '), 'msg err')); } else { done.disabled = false; say(r.d.error || 'Something went wrong.'); } };
+    back.onclick = () => { started = null; draw(); };
+    const row = el('div', undefined, 'row'); row.append(done, back); box.append(code, row, msg);
+  }
+}
+load();
+</script></body></html>

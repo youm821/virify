@@ -127,17 +127,29 @@ app.get('/healthz', (req, res) => res.json({
   discordProxyOn: Boolean(process.env.DISCORD_PROXY_URL),
   baseUrl: BASE_URL,
 }));
-// ---------- Require Discord login (and the Members role) to view anything ----------
-// On by default once Discord login is configured. Set REQUIRE_LOGIN=false to make the site public again.
+// ---------- Who can see what ----------
+// Public: landing, rules, departments, privacy, sign-in. Members (signed in with Discord): apply, link Roblox,
+// profile, settings, events. Staff only: live dashboard, map, MDT and all server data. Admins: setup tools.
+// Set REQUIRE_LOGIN=false to turn all of this off.
 const loginRequired = authEnabled && String(process.env.REQUIRE_LOGIN ?? 'true').toLowerCase() !== 'false';
+const PUBLIC_PATHS = new Set(['/', '/login', '/rules', '/departments', '/privacy', '/healthz', '/api/me', '/site.css', '/site.js',
+  '/api/public/info', '/api/public/rules', '/api/public/departments']);
+const STAFF_ONLY = /^\/(dashboard|mdt|index\.html)$|^\/api\/(stats|history|heatmap|mapheat|mdt|melonly|activity)$/;
+const pageFile = name => { // find a page by name, ignoring capitals and stray spaces in the uploaded file name
+  for (const dir of [path.join(__dirname, 'public'), __dirname]) {
+    try { const hit = fs.readdirSync(dir).find(f => f.trim().toLowerCase() === name); if (hit) return path.join(dir, hit); } catch {}
+  }
+  return null;
+};
 app.use((req, res, next) => {
   if (!loginRequired) return next();
-  const p = req.path;
-  if (p === '/healthz' || p === '/login' || p === '/api/me' || p.startsWith('/auth/')) return next();
+  const p = req.path, api = p.startsWith('/api/');
+  if (PUBLIC_PATHS.has(p) || p.startsWith('/auth/')) return next();
   const s = getSession(req);
-  if (s && s.member) return next();
-  if (p.startsWith('/api/')) return res.status(401).json({ error: 'Log in with Discord first.', login: true });
-  return res.redirect(!s ? '/login' : s.inGuild ? '/login?error=norole' : '/login?error=notmember');
+  if (!s) return api ? res.status(401).json({ error: 'Sign in with Discord first.', login: true }) : res.redirect('/?signin=1');
+  if (!s.member) return api ? res.status(403).json({ error: 'You need the Members role.' }) : res.redirect(s.inGuild ? '/login?error=norole' : '/login?error=notmember');
+  if (STAFF_ONLY.test(p) && !s.staff) return api ? res.status(403).json({ error: 'Staff only.' }) : res.redirect('/');
+  next();
 });
 
 // Serve the page from ./public (or from next to server.js if the folder was flattened on upload)
@@ -151,20 +163,22 @@ app.get('/login', (req, res) => {
   if (file && fs.existsSync(file)) return res.sendFile(file);
   res.status(404).send('login.html is missing. Upload dashboard/public/login.html to your repo and redeploy.');
 });
-// Staff get the full dashboard (index.html); everyone else with the Members role gets members.html.
-app.get(['/', '/index.html'], (req, res, next) => {
-  if (!pageDir) return next();
-  const s = getSession(req);
-  res.set('Cache-Control', 'no-store');
-  if (!loginRequired || (s && s.staff)) return res.sendFile(path.join(pageDir, 'index.html'));
-  const mp = path.join(pageDir, 'members.html');
-  if (fs.existsSync(mp)) return res.sendFile(mp);
-  // Never fall back to the staff page for members
-  res.status(500).send('members.html is missing. Upload it to the public folder (lowercase, with an s) and redeploy.');
-});
+// ---------- Pages ----------
+const PAGES = { '/': 'landing.html', '/rules': 'rules.html', '/departments': 'departments.html', '/privacy': 'privacy.html', '/link': 'link.html', '/dashboard': 'index.html' };
+for (const [route, file] of Object.entries(PAGES)) {
+  app.get(route, (req, res) => {
+    const f = pageFile(file);
+    if (!f) return res.status(404).send(`${file} is missing. Upload it next to server.js and redeploy.`);
+    res.set('Cache-Control', 'no-store'); res.sendFile(f);
+  });
+}
+for (const asset of ['site.css', 'site.js']) {
+  app.get('/' + asset, (req, res) => { const f = pageFile(asset); if (!f) return res.status(404).end(); res.set('Cache-Control', 'no-cache'); res.sendFile(f); });
+}
+app.get('/index.html', (req, res) => res.redirect('/dashboard'));
 try {
   require(['./extras', './extra'].find(m => { try { return require.resolve(m); } catch { return false; } }) || './extras')(app, {
-    erlc, loadJson, saveJson,
+    erlc, loadJson, saveJson, dataDir: DATA_DIR, pageFile,
     getSession: req => getSession(req),
     requireStaff: (req, res, next) => requireStaff(req, res, next),
     audit: (...a) => audit(...a),
@@ -245,10 +259,11 @@ app.get('/api/stats', async (req, res) => {
       joinKey: String(SHOW_JOIN_CODE).toLowerCase() === 'true' ? data.JoinKey : null,
       peaks: { today: meta.peakDay.date === dayKey() ? meta.peakDay.n : 0, allTime: meta.peakAll, allTimeAt: meta.peakAllAt },
       logo: /^https:\/\//.test(process.env.SERVER_LOGO_URL || '') ? process.env.SERVER_LOGO_URL : null,
-      map: {
-        image: Boolean(MAP_BOUNDS && pageDir && fs.existsSync(path.join(pageDir, 'map.png'))),
-        bounds: MAP_BOUNDS, flipY: MAP_FLIP_Y,
-      },
+      map: (() => {
+        const cal = loadJson('mapcal.json', null); // saved by the /mapsetup page
+        if (cal && cal.bounds) return { image: cal.hasImage ? cal.v : false, bounds: cal.bounds, flipY: false };
+        return { image: Boolean(MAP_BOUNDS && pageDir && fs.existsSync(path.join(pageDir, 'map.png'))), bounds: MAP_BOUNDS, flipY: MAP_FLIP_Y };
+      })(),
       teams, staff, players: list, calls, vehicles,
       vehicleCount: (data.Vehicles || []).length,
       verified,
@@ -460,7 +475,7 @@ app.get('/auth/callback', async (req, res) => {
     };
     setCookie(res, 'session', packCookie(session), 12 * 3600);
     setCookie(res, 'oauth_state', '', 0);
-    res.redirect('/');
+    res.redirect(staff ? '/dashboard' : '/');
   } catch (err) {
     console.error('Discord login failed:', err.message);
     res.status(502).send('Discord login failed. Check the server logs and your Discord app settings.');

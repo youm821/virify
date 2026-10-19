@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rules</title><link rel="stylesheet" href="/site.css"><script src="/site.js" defer></script></head>
+<body><div class="wrap">
+  <h1>Server rules</h1><p id="stamp"></p>
+  <div id="rules"><div class="card muted">Loading…</div></div>
+  <div class="card" id="admin" hidden>
+    <h2>Edit rules <span class="muted" style="font-weight:400">(admins)</span></h2>
+    <p>Start a section with <code># Title</code> and each rule with <code>- </code>.</p>
+    <textarea id="text" rows="14"></textarea>
+    <div class="row"><button class="btn" id="save">Save</button><button class="btn ghost" id="post">Post to Discord</button></div>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const el = (t, x, c) => { const e = document.createElement(t); if (x !== undefined) e.textContent = x; if (c) e.className = c; return e; };
+const J = { 'Content-Type': 'application/json' };
+function draw(text) {
+  const box = $('rules'); box.textContent = ''; let card = null, ul = null;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim(); if (!line) continue;
+    if (line.startsWith('# ')) { card = el('div', undefined, 'card'); card.append(el('h2', line.slice(2))); box.append(card); ul = null; }
+    else { if (!card) { card = el('div', undefined, 'card'); box.append(card); }
+      if (line.startsWith('- ')) { if (!ul) { ul = el('ul', undefined, 'list'); card.append(ul); } ul.append(el('li', line.slice(2))); }
+      else { ul = null; card.append(el('p', line)); } }
+  }
+}
+(async () => {
+  const [rules, me] = await Promise.all([fetch('/api/public/rules').then(r => r.json()), fetch('/api/me').then(r => r.json()).catch(() => null)]);
+  draw(rules.text); $('text').value = rules.text;
+  if (rules.at) $('stamp').textContent = 'Last updated ' + new Date(rules.at).toLocaleDateString();
+  $('admin').hidden = !(me && me.admin);
+})();
+const say = (t, ok) => { $('msg').textContent = t; $('msg').className = 'msg ' + (ok ? 'ok' : 'err'); };
+$('save').onclick = async () => {
+  const r = await fetch('/api/admin/rules', { method: 'POST', headers: J, body: JSON.stringify({ text: $('text').value }) });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) { draw($('text').value); say('Saved.', true); } else say(d.error || 'Could not save.');
+};
+$('post').onclick = async () => {
+  const r = await fetch('/api/admin/rules/embed', { method: 'POST', headers: J, body: '{}' });
+  const d = await r.json().catch(() => ({}));
+  say(r.ok ? 'Posted to Discord.' : (d.error || 'Could not post.'), r.ok);
+};
+</script></body></html>

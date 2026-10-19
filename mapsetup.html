@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map setup</title>
+<style>
+  :root { --bg:#0d0f14; --card:#14171e; --text:#e9ebf1; --muted:#8a93a6; --line:#232834; --accent:#7c6cff; --good:#3ddc97; --bad:#f2555d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:24px 16px 56px; }
+  a { color:var(--accent); text-decoration:none; font-size:14px; } h1 { font-size:22px; margin:8px 0 4px; } p { color:var(--muted); margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-top:14px; }
+  h2 { font-size:15px; margin:0 0 10px; } .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  button, select, input[type=file] { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); font:inherit; }
+  button { cursor:pointer; } button.primary { background:var(--accent); border-color:var(--accent); color:#fff; } button.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); } button:disabled { opacity:.5; cursor:default; }
+  .pic { position:relative; display:inline-block; max-width:100%; margin-top:12px; border:1px solid var(--line); border-radius:8px; overflow:hidden; cursor:crosshair; }
+  .pic img { display:block; max-width:100%; height:auto; }
+  .pin { position:absolute; width:22px; height:22px; margin:-11px 0 0 -11px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; font-weight:700; display:grid; place-items:center; border:2px solid #fff; pointer-events:none; }
+  .msg { margin-top:10px; font-size:14px; } .ok { color:var(--good); } .err { color:var(--bad); } [hidden] { display:none !important; }
+</style>
+<script src="/site.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <a href="/">← Home</a>
+  <h1>Live map setup</h1>
+  <p>Admins only. Upload a picture of the ER:LC map, then match two places on it to where players really are in-game.</p>
+
+  <div class="card">
+    <h2>1. Upload the map picture</h2>
+    <p>Use a square PNG, JPG, or WebP of the full map (up to 8 MB), and one you’re allowed to use.</p>
+    <div class="row"><input type="file" id="file" accept="image/png,image/jpeg,image/webp"><button class="primary" id="up">Upload</button><button id="rm">Remove map</button></div>
+    <div class="msg" id="m1"></div>
+  </div>
+
+  <div class="card" id="cal" hidden>
+    <h2>2. Match two spots</h2>
+    <p>Stand at a landmark in-game, pick yourself below, then click the same spot on the picture. Do it again at a landmark far away (ideally opposite corners).</p>
+    <div class="row"><select id="who" aria-label="Player"></select><button id="refresh">Refresh players</button></div>
+    <div class="row"><button id="s1" class="on">Set point 1</button><button id="s2">Set point 2</button><span class="muted" id="state"></span></div>
+    <div class="pic" id="pic"><img id="img" alt="Map"><span class="pin" id="p1" hidden>1</span><span class="pin" id="p2" hidden>2</span></div>
+    <div class="row"><button class="primary" id="save" disabled>Save calibration</button></div>
+    <div class="msg" id="m2"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const say = (id, t, ok) => { $(id).textContent = t; $(id).className = 'msg ' + (ok ? 'ok' : 'err'); };
+let players = [], pts = [null, null], cur = 0;
+
+function showImage(v) { $('img').src = '/map.png?v=' + (v || Date.now()); $('cal').hidden = false; }
+fetch('/map.png', { method: 'HEAD' }).then(r => { if (r.ok && (r.headers.get('content-type') || '').startsWith('image/')) showImage(); });
+
+$('up').onclick = async () => {
+  const f = $('file').files[0];
+  if (!f) return say('m1', 'Choose a picture first.');
+  $('up').disabled = true; say('m1', 'Uploading…', true);
+  try {
+    const r = await fetch('/api/admin/map/image', { method: 'POST', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { say('m1', 'Uploaded. Now match two spots below.', true); pts = [null, null]; pin(); showImage(d.v); }
+    else say('m1', d.error || 'Upload failed.');
+  } catch { say('m1', 'Upload failed.'); }
+  $('up').disabled = false;
+};
+$('rm').onclick = async () => {
+  if (!confirm('Remove the map picture and calibration?')) return;
+  const r = await fetch('/api/admin/map', { method: 'DELETE' });
+  if (r.ok) { $('cal').hidden = true; pts = [null, null]; say('m1', 'Map removed.', true); } else say('m1', 'Could not remove it.');
+};
+
+async function loadPlayers() {
+  const r = await fetch('/api/admin/map/positions'), d = await r.json().catch(() => []);
+  if (!r.ok) return say('m2', d.error || 'Could not load players.');
+  players = d; $('who').textContent = '';
+  for (const p of d) $('who').append(new Option(`${p.name} (${Math.round(p.x)}, ${Math.round(p.z)})`, p.name));
+  if (!d.length) say('m2', 'No players with a location right now. Join the server and refresh.');
+}
+$('refresh').onclick = loadPlayers; loadPlayers();
+
+function pick(i) { cur = i; $('s1').classList.toggle('on', i === 0); $('s2').classList.toggle('on', i === 1); }
+$('s1').onclick = () => pick(0); $('s2').onclick = () => pick(1);
+function pin() {
+  [0, 1].forEach(i => { const p = pts[i], el = $('p' + (i + 1)); el.hidden = !p; if (p) { el.style.left = p.u * 100 + '%'; el.style.top = p.v * 100 + '%'; } });
+  $('state').textContent = pts.map((p, i) => `Point ${i + 1}: ${p ? p.name : 'not set'}`).join(' · ');
+  $('save').disabled = !(pts[0] && pts[1]);
+}
+$('img').addEventListener('click', e => {
+  const pl = players.find(p => p.name === $('who').value);
+  if (!pl) return say('m2', 'Pick a player first (and refresh the list if it’s empty).');
+  const r = $('img').getBoundingClientRect();
+  pts[cur] = { name: pl.name, x: pl.x, z: pl.z, u: (e.clientX - r.left) / r.width, v: (e.clientY - r.top) / r.height };
+  say('m2', '', true); pin(); if (cur === 0 && !pts[1]) pick(1);
+});
+$('save').onclick = async () => {
+  const [a, b] = pts;
+  const r = await fetch('/api/admin/map/calibrate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p1: { x: a.x, z: a.z, u: a.u, v: a.v }, p2: { x: b.x, z: b.z, u: b.u, v: b.v } }) });
+  const d = await r.json().catch(() => ({}));
+  say('m2', r.ok ? 'Saved! Open the dashboard’s Live tab to see the map.' : (d.error || 'Could not save.'), r.ok);
+};
+pin();
+</script>
+</body>
+</html>
