@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome</title><link rel="stylesheet" href="/site.css"><script src="/site.js" defer></script></head>
+<body><div class="wrap">
+  <div class="card" style="margin-top:0;padding:32px 24px">
+    <h1 id="name">Welcome</h1><p id="tag" style="font-size:17px"></p>
+    <div class="msg err" id="notice" hidden>Please sign in with Discord to open that page.</div>
+    <div class="row" id="cta"></div>
+  </div>
+  <div class="card"><h2>Departments</h2><div class="grid" id="depts"><span class="muted">Loading…</span></div></div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card" style="margin:0"><h2>Server rules</h2><p>Read the rules before you join a session.</p><a class="btn ghost" href="/rules">Read the rules</a></div>
+    <div class="card" style="margin:0"><h2>Your privacy</h2><p>See what information this site keeps and why.</p><a class="btn ghost" href="/privacy">Privacy</a></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const el = (t, x, c) => { const e = document.createElement(t); if (x !== undefined) e.textContent = x; if (c) e.className = c; return e; };
+const j = async u => { try { const r = await fetch(u); return r.ok ? r.json() : null; } catch { return null; } };
+(async () => {
+  if (new URLSearchParams(location.search).has('signin')) $('notice').hidden = false;
+  const [me, info, depts] = await Promise.all([j('/api/me'), j('/api/public/info'), j('/api/public/departments')]);
+  if (info) { $('name').textContent = info.name; document.title = info.name; $('tag').textContent = info.tagline || 'Roleplay, patrols, and community.'; }
+  const cta = $('cta');
+  const btn = (href, text, ghost) => { const a = el('a', text, 'btn' + (ghost ? ' ghost' : '')); a.href = href; cta.append(a); };
+  if (me && me.user && me.member) { btn('/apply', 'Apply to a department'); btn('/link', 'Link your Roblox account', true); if (me.staff) btn('/dashboard', 'Open dashboard', true); }
+  else if (me && me.user) cta.append(el('span', 'You’re signed in, but you need the Members role. Ask a staff member in Discord.', 'muted'));
+  else { if (me && me.authEnabled) btn('/auth/login', 'Sign in with Discord'); if (info && info.discord) btn(info.discord, 'Join our Discord', true); }
+  const box = $('depts'); box.textContent = '';
+  if (!depts || !depts.length) { box.append(el('span', 'Departments will be listed here soon.', 'muted')); return; }
+  for (const d of depts) {
+    const a = el('a'); a.href = '/departments#' + d.id; a.style.cssText = 'text-decoration:none;color:inherit;border:1px solid var(--line);border-left:3px solid ' + d.color + ';border-radius:8px;padding:12px';
+    a.append(el('strong', d.name), el('div', d.summary || '', 'muted')); box.append(a);
+  }
+})();
+</script></body></html>
