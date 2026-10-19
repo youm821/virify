@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Departments</title><link rel="stylesheet" href="/site.css"><script src="/site.js" defer></script></head>
+<body><div class="wrap">
+  <h1>Departments</h1><p>Each department has its own page. Pick one to see what it does and how to join.</p>
+  <div class="tabs" id="tabs"></div>
+  <div class="card" id="panel"><span class="muted">Loading…</span></div>
+
+  <div class="card" id="admin" hidden>
+    <h2 id="ftitle">Add a department</h2>
+    <label for="fname">Name</label><input id="fname" maxlength="40">
+    <label for="fsum">One-line summary</label><input id="fsum" maxlength="160">
+    <label for="fdesc">About this department</label><textarea id="fdesc" rows="4" maxlength="2000"></textarea>
+    <label for="freq">Requirements (one per line)</label><textarea id="freq" rows="3"></textarea>
+    <label for="franks">Ranks, lowest first (one per line)</label><textarea id="franks" rows="3"></textarea>
+    <label for="finv">Discord invite link (optional)</label><input id="finv" placeholder="https://discord.gg/…">
+    <label for="fhook">Discord webhook for this department’s embeds <span id="hookState"></span></label><input id="fhook" type="password" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+    <label>Color <input id="fcolor" type="color" value="#7c6cff" style="width:60px;height:36px;padding:2px;display:inline-block"></label>
+    <div class="row"><button class="btn" id="save">Save department</button><button class="btn ghost" id="reset">New</button></div>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const el = (t, x, c) => { const e = document.createElement(t); if (x !== undefined) e.textContent = x; if (c) e.className = c; return e; };
+const J = { 'Content-Type': 'application/json' };
+let me = null, depts = [], cur = location.hash.slice(1), editing = null;
+const say = (t, ok) => { $('msg').textContent = t; $('msg').className = 'msg ' + (ok ? 'ok' : 'err'); };
+
+async function load() {
+  [me, depts] = await Promise.all([fetch('/api/me').then(r => r.json()).catch(() => null), fetch('/api/public/departments').then(r => r.json())]);
+  $('admin').hidden = !(me && me.admin); draw();
+}
+function list(items, ordered) { const l = el(ordered ? 'ol' : 'ul', undefined, 'list'); items.forEach(x => l.append(el('li', x))); return l; }
+function draw() {
+  const tabs = $('tabs'), panel = $('panel'); tabs.textContent = ''; panel.textContent = '';
+  const d = depts.find(x => x.id === cur) || depts[0];
+  for (const x of depts) {
+    const b = el('button', x.name, 'tab' + (d && d.id === x.id ? ' on' : '')); b.style.setProperty('--c', x.color);
+    b.onclick = () => { cur = x.id; history.replaceState(null, '', '#' + x.id); draw(); }; tabs.append(b);
+  }
+  if (!d) { panel.append(el('p', 'No departments have been added yet.')); return; }
+  panel.style.borderTop = '3px solid ' + d.color;
+  panel.append(el('h2', d.name));
+  if (d.summary) panel.append(el('p', d.summary));
+  if (d.description) { const p = el('p', d.description); p.style.whiteSpace = 'pre-wrap'; panel.append(p); }
+  if (d.requirements.length) { panel.append(el('h2', 'Requirements')); panel.append(list(d.requirements)); }
+  if (d.ranks.length) { panel.append(el('h2', 'Ranks')); panel.append(list(d.ranks, true)); }
+  const row = el('div', undefined, 'row');
+  if (me && me.member) { const a = el('a', 'Apply', 'btn'); a.href = '/apply'; row.append(a); }
+  else if (me && me.authEnabled) { const a = el('a', 'Sign in to apply', 'btn'); a.href = '/auth/login'; row.append(a); }
+  if (d.invite) { const a = el('a', 'Department Discord', 'btn ghost'); a.href = d.invite; a.rel = 'noopener'; row.append(a); }
+  panel.append(row);
+  if (me && me.admin) {
+    const ar = el('div', undefined, 'row'), ed = el('button', 'Edit', 'btn ghost'), em = el('button', 'Post embed to Discord', 'btn ghost'), del = el('button', 'Delete', 'btn bad');
+    ed.onclick = () => edit(d);
+    em.onclick = async () => { const r = await fetch('/api/admin/departments/' + d.id + '/embed', { method: 'POST', headers: J, body: '{}' }); const j = await r.json().catch(() => ({})); say(r.ok ? 'Posted to Discord.' : (j.error || 'Could not post.'), r.ok); };
+    del.onclick = async () => { if (!confirm('Delete ' + d.name + '?')) return; await fetch('/api/admin/departments/' + d.id, { method: 'DELETE' }); cur = ''; load(); };
+    ar.append(ed, em, del); panel.append(ar);
+  }
+}
+function edit(d) {
+  editing = d ? d.id : null; $('ftitle').textContent = d ? 'Edit ' + d.name : 'Add a department';
+  $('fname').value = d ? d.name : ''; $('fsum').value = d ? d.summary : ''; $('fdesc').value = d ? d.description : '';
+  $('freq').value = d ? d.requirements.join('\n') : ''; $('franks').value = d ? d.ranks.join('\n') : '';
+  $('finv').value = d ? d.invite : ''; $('fhook').value = ''; $('fcolor').value = d ? d.color : '#7c6cff';
+  $('hookState').textContent = d && d.hasWebhook ? '(one is saved; leave blank to keep it)' : '';
+  $('admin').scrollIntoView({ behavior: 'smooth' });
+}
+$('reset').onclick = () => edit(null);
+$('save').onclick = async () => {
+  const body = { id: editing, name: $('fname').value, summary: $('fsum').value, description: $('fdesc').value, requirements: $('freq').value,
+    ranks: $('franks').value, invite: $('finv').value, webhook: $('fhook').value, color: $('fcolor').value };
+  const r = await fetch('/api/admin/departments', { method: 'POST', headers: J, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) { cur = d.id; say('Saved.', true); edit(null); await load(); } else say(d.error || 'Could not save.');
+};
+load();
+</script></body></html>
