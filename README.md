@@ -1,7 +1,7 @@
 # ERLC Dashboard
 
 Live server stats website. The Express backend holds your ERLC key, caches results for 10 seconds, and serves a static page that refreshes automatically.
-
+https%3A%2F%2Fgithub.com%2Fyoum821%2Fvirify%2Fblob%2Fmain%2Flanding.html
 ## Run it
 1. `cd dashboard && npm install`
 2. `cp .env.example .env` and fill in `ERLC_SERVER_KEY` and `STAFF_KEY`
